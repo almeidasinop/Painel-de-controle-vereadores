@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lower Third - Tribuna Parlamentar</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: transparent;
+            overflow: hidden;
+            width: 1920px;
+            height: 1080px;
+        }
+
+        .lower-third-container {
+            position: absolute;
+            bottom: 80px;
+            left: 60px;
+            opacity: 0;
+            transform: translateX(-100%);
+            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .lower-third-container.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .lower-third {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .photo-container {
+            width: 180px;
+            height: 180px;
+            border-radius: 15px;
+            overflow: hidden;
+            border: 5px solid #ffffff;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .photo-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .photo-placeholder {
+            font-size: 80px;
+            color: white;
+            font-weight: bold;
+        }
+
+        .info-container {
+            background: linear-gradient(90deg,
+                    rgba(15, 15, 35, 0.95) 0%,
+                    rgba(15, 15, 35, 0.85) 100%);
+            backdrop-filter: blur(10px);
+            padding: 20px 40px;
+            border-radius: 15px;
+            border-left: 6px solid #4facfe;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            min-width: 500px;
+        }
+
+        .speaker-name {
+            font-size: 42px;
+            font-weight: bold;
+            color: #ffffff;
+            margin-bottom: 8px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+        }
+
+        .speaker-party {
+            font-size: 28px;
+            color: #4facfe;
+            font-weight: 600;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+
+        .timer-container {
+            position: absolute;
+            bottom: 80px;
+            right: 60px;
+            background: linear-gradient(135deg,
+                    rgba(15, 15, 35, 0.95) 0%,
+                    rgba(15, 15, 35, 0.85) 100%);
+            backdrop-filter: blur(10px);
+            padding: 20px 40px;
+            border-radius: 15px;
+            border: 3px solid #4facfe;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+        }
+
+        .timer-container.visible {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .timer-display {
+            font-size: 64px;
+            font-weight: bold;
+            color: #4facfe;
+            font-family: 'Courier New', monospace;
+            text-shadow: 0 0 20px rgba(79, 172, 254, 0.5);
+            letter-spacing: 4px;
+        }
+
+        .timer-label {
+            font-size: 18px;
+            color: #ffffff;
+            text-align: center;
+            margin-top: 5px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* Animação de pulsação quando tempo está acabando */
+        @keyframes pulse {
+
+            0%,
+            100% {
+                transform: scale(1);
+                color: #4facfe;
+            }
+
+            50% {
+                transform: scale(1.05);
+                color: #fa709a;
+            }
+        }
+
+        .timer-display.warning {
+            animation: pulse 1s infinite;
+        }
+
+        /* Status de conexão (para debug) */
+        .connection-status {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: none;
+            /* Ocultar em produção */
+        }
+
+        .connection-status.connected {
+            background: rgba(0, 242, 254, 0.3);
+            border: 2px solid #00f2fe;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Status de Conexão (Debug) -->
+    <div class="connection-status" id="connectionStatus">
+        🔴 Desconectado
+    </div>
+
+    <!-- Lower Third -->
+    <div class="lower-third-container" id="lowerThird">
+        <div class="lower-third">
+            <div class="photo-container" id="photoContainer">
+                <div class="photo-placeholder" id="photoPlaceholder">?</div>
+            </div>
+            <div class="info-container">
+                <div class="speaker-name" id="speakerName">Nome do Vereador</div>
+                <div class="speaker-party" id="speakerParty">Partido</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Timer -->
+    <div class="timer-container" id="timerContainer">
+        <div class="timer-display" id="timerDisplay">00:00</div>
+        <div class="timer-label">TEMPO RESTANTE</div>
+    </div>
+
+    <script>
+        // Configuração
+        const DELAY_SECONDS = 10; // Delay de 10 segundos para aparecer
+        const WARNING_THRESHOLD = 30; // Avisar quando faltar 30 segundos
+
+        // Estado
+        let socket = null;
+        let delayTimeout = null;
+        let timerInterval = null;
+        let currentSpeaker = null;
+        let remainingSeconds = 0;
+        let isRunning = false;
+
+        // Elementos DOM
+        const elements = {
+            connectionStatus: document.getElementById('connectionStatus'),
+            lowerThird: document.getElementById('lowerThird'),
+            timerContainer: document.getElementById('timerContainer'),
+            photoContainer: document.getElementById('photoContainer'),
+            photoPlaceholder: document.getElementById('photoPlaceholder'),
+            speakerName: document.getElementById('speakerName'),
+            speakerParty: document.getElementById('speakerParty'),
+            timerDisplay: document.getElementById('timerDisplay')
+        };
+
+        // Conectar ao servidor WebSocket
+        function connectWebSocket() {
+            socket = io('http://127.0.0.1:5000');
+
+            socket.on('connect', () => {
+                console.log('✅ Conectado ao servidor');
+                elements.connectionStatus.textContent = '🟢 Conectado';
+                elements.connectionStatus.classList.add('connected');
+
+                // Solicitar estado atual
+                socket.emit('request_state');
+            });
+
+            socket.on('disconnect', () => {
+                console.log('❌ Desconectado do servidor');
+                elements.connectionStatus.textContent = '🔴 Desconectado';
+                elements.connectionStatus.classList.remove('connected');
+            });
+
+            // Eventos do sistema
+            socket.on('speaker_selected', handleSpeakerSelected);
+            socket.on('speaker_cleared', handleSpeakerCleared);
+            socket.on('timer_start', handleTimerStart);
+            socket.on('timer_pause', handleTimerPause);
+            socket.on('timer_stop', handleTimerStop);
+            socket.on('timer_update', handleTimerUpdate);
+            socket.on('state_update', handleStateUpdate);
+        }
+
+        // Handlers de eventos
+        function handleSpeakerSelected(data) {
+            console.log('🎤 Orador selecionado:', data);
+            currentSpeaker = data;
+            updateSpeakerDisplay();
+        }
+
+        function handleSpeakerCleared() {
+            console.log('🔇 Orador removido');
+            currentSpeaker = null;
+            hideLowerThird();
+        }
+
+        function handleTimerStart(data) {
+            console.log('▶️ Timer iniciado:', data);
+            remainingSeconds = data.remaining_seconds;
+            isRunning = true;
+
+            // Aplicar delay antes de mostrar
+            clearTimeout(delayTimeout);
+            delayTimeout = setTimeout(() => {
+                showLowerThird();
+                startLocalTimer();
+            }, DELAY_SECONDS * 1000);
+        }
+
+        function handleTimerPause(data) {
+            console.log('⏸️ Timer pausado:', data);
+            remainingSeconds = data.remaining_seconds;
+            isRunning = false;
+            stopLocalTimer();
+            updateTimerDisplay();
+        }
+
+        function handleTimerStop() {
+            console.log('⏹️ Timer parado');
+            isRunning = false;
+            stopLocalTimer();
+            hideLowerThird();
+            clearTimeout(delayTimeout);
+        }
+
+        function handleTimerUpdate(data) {
+            console.log('⏱️ Timer atualizado:', data.remaining_seconds);
+            remainingSeconds = data.remaining_seconds;
+            updateTimerDisplay();
+        }
+
+        function handleStateUpdate(data) {
+            console.log('📊 Estado atualizado:', data);
+
+            if (data.speaker) {
+                currentSpeaker = data.speaker;
+                updateSpeakerDisplay();
+            }
+
+            if (data.timer) {
+                remainingSeconds = data.timer.remaining_seconds;
+                isRunning = data.timer.is_running;
+                updateTimerDisplay();
+
+                if (isRunning) {
+                    showLowerThird();
+                    startLocalTimer();
+                }
+            }
+        }
+
+        // Funções de display
+        function updateSpeakerDisplay() {
+            if (!currentSpeaker) return;
+
+            elements.speakerName.textContent = currentSpeaker.nome;
+            elements.speakerParty.textContent = currentSpeaker.partido;
+
+            if (currentSpeaker.foto) {
+                elements.photoContainer.innerHTML = `<img src="${currentSpeaker.foto}" alt="${currentSpeaker.nome}">`;
+            } else {
+                const initial = currentSpeaker.nome.charAt(0).toUpperCase();
+                elements.photoPlaceholder.textContent = initial;
+            }
+        }
+
+        function updateTimerDisplay() {
+            const minutes = Math.floor(remainingSeconds / 60);
+            const seconds = remainingSeconds % 60;
+            const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+
+            elements.timerDisplay.textContent = timeString;
+
+            // Adicionar warning se tempo está acabando
+            if (remainingSeconds <= WARNING_THRESHOLD && remainingSeconds > 0) {
+                elements.timerDisplay.classList.add('warning');
+            } else {
+                elements.timerDisplay.classList.remove('warning');
+            }
+        }
+
+        function showLowerThird() {
+            elements.lowerThird.classList.add('visible');
+            elements.timerContainer.classList.add('visible');
+        }
+
+        function hideLowerThird() {
+            elements.lowerThird.classList.remove('visible');
+            elements.timerContainer.classList.remove('visible');
+        }
+
+        function startLocalTimer() {
+            stopLocalTimer();
+
+            timerInterval = setInterval(() => {
+                if (remainingSeconds > 0) {
+                    remainingSeconds--;
+                    updateTimerDisplay();
+                } else {
+                    stopLocalTimer();
+                }
+            }, 1000);
+        }
+
+        function stopLocalTimer() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+        }
+
+        // Inicializar
+        window.addEventListener('load', () => {
+            console.log('🚀 Lower Third carregado');
+            connectWebSocket();
+        });
+
+        // Cleanup ao fechar
+        window.addEventListener('beforeunload', () => {
+            if (socket) {
+                socket.disconnect();
+            }
+            stopLocalTimer();
+            clearTimeout(delayTimeout);
+        });
+    </script>
+</body>
+
+</html>
