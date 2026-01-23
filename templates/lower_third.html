@@ -4,396 +4,339 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lower Third - Tribuna Parlamentar</title>
-    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <title>Lower Third - Sinop Dinâmico</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700;900&display=swap');
+
+        :root {
+            /* Cores padrão caso a API falhe */
+            --primary-color: #43A077;
+            /* Verde Sinop */
+            --secondary-color: #5B76A7;
+            /* Azul Sinop */
+            --text-color: #FFFFFF;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: transparent;
+            margin: 0;
+            padding: 0;
+            background-color: transparent;
             overflow: hidden;
-            width: 1920px;
-            height: 1080px;
+            font-family: 'Montserrat', sans-serif;
         }
 
-        .lower-third-container {
+        #container {
             position: absolute;
-            bottom: 80px;
-            left: 60px;
+            bottom: 60px;
+            left: 0;
+            /* Colado na borda */
+            display: flex;
+            align-items: center;
             opacity: 0;
             transform: translateX(-100%);
-            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        .lower-third-container.visible {
+        #container.visible {
             opacity: 1;
             transform: translateX(0);
         }
 
-        .lower-third {
+        /* LOGO / BRASÃO */
+        .logo-wrapper {
+            position: absolute;
+            left: 20px;
+            z-index: 10;
+            width: 150px;
+            height: 150px;
             display: flex;
-            align-items: center;
-            gap: 20px;
-        }
-
-        .photo-container {
-            width: 180px;
-            height: 180px;
-            border-radius: 15px;
-            overflow: hidden;
-            border: 5px solid #ffffff;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            align-items: center;
             justify-content: center;
+            align-items: center;
+            filter: drop-shadow(4px 4px 8px rgba(0, 0, 0, 0.4));
         }
 
-        .photo-container img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+        .logo-img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
         }
 
-        .photo-placeholder {
-            font-size: 80px;
-            color: white;
-            font-weight: bold;
+        /* BARRAS */
+        .bars-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            /* Pequeno espaçamento entre as barras como na ref */
+            padding-left: 0;
         }
 
-        .info-container {
-            background: linear-gradient(90deg,
-                    rgba(15, 15, 35, 0.95) 0%,
-                    rgba(15, 15, 35, 0.85) 100%);
-            backdrop-filter: blur(10px);
-            padding: 20px 40px;
-            border-radius: 15px;
-            border-left: 6px solid #4facfe;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            min-width: 500px;
+        .bar {
+            display: flex;
+            align-items: center;
+            color: var(--text-color);
+            padding-left: 170px;
+            /* Espaço para o brasão que está por cima */
+            padding-right: 40px;
+            white-space: nowrap;
+            width: fit-content;
+            min-width: 400px;
+            box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
+            border-radius: 0 12px 12px 0;
+            /* Arredondado apenas na direita */
         }
 
-        .speaker-name {
-            font-size: 42px;
-            font-weight: bold;
-            color: #ffffff;
-            margin-bottom: 8px;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-        }
-
-        .speaker-party {
-            font-size: 28px;
-            color: #4facfe;
-            font-weight: 600;
-            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
-        }
-
-        .timer-container {
-            position: absolute;
-            bottom: 80px;
-            right: 60px;
-            background: linear-gradient(135deg,
-                    rgba(15, 15, 35, 0.95) 0%,
-                    rgba(15, 15, 35, 0.85) 100%);
-            backdrop-filter: blur(10px);
-            padding: 20px 40px;
-            border-radius: 15px;
-            border: 3px solid #4facfe;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-            opacity: 0;
-            transform: translateX(100%);
-            transition: all 0.8s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-        }
-
-        .timer-container.visible {
-            opacity: 1;
-            transform: translateX(0);
-        }
-
-        .timer-display {
-            font-size: 64px;
-            font-weight: bold;
-            color: #4facfe;
-            font-family: 'Courier New', monospace;
-            text-shadow: 0 0 20px rgba(79, 172, 254, 0.5);
-            letter-spacing: 4px;
-        }
-
-        .timer-label {
+        /* Barra Superior: Sessão e Data */
+        .top-bar {
+            background-color: var(--primary-color);
+            height: 35px;
             font-size: 18px;
-            color: #ffffff;
-            text-align: center;
-            margin-top: 5px;
+            font-weight: 700;
+            justify-content: space-between;
             text-transform: uppercase;
-            letter-spacing: 2px;
         }
 
-        /* Animação de pulsação quando tempo está acabando */
-        @keyframes pulse {
-
-            0%,
-            100% {
-                transform: scale(1);
-                color: #4facfe;
-            }
-
-            50% {
-                transform: scale(1.05);
-                color: #fa709a;
-            }
+        .top-bar span:last-child {
+            margin-left: 50px;
         }
 
-        .timer-display.warning {
-            animation: pulse 1s infinite;
+        /* Barra do Meio: Nome */
+        .middle-bar {
+            background-color: var(--secondary-color);
+            height: 60px;
+            font-size: 42px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: -1px;
         }
 
-        /* Status de conexão (para debug) */
-        .connection-status {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            background: rgba(0, 0, 0, 0.7);
-            color: white;
-            padding: 10px 20px;
-            border-radius: 8px;
-            font-size: 14px;
-            display: none;
-            /* Ocultar em produção */
+        /* Barra Inferior: Site */
+        .bottom-bar {
+            background-color: var(--primary-color);
+            height: 28px;
+            font-size: 16px;
+            font-weight: 700;
         }
 
-        .connection-status.connected {
-            background: rgba(0, 242, 254, 0.3);
-            border: 2px solid #00f2fe;
+        /* Ajuste para o conteúdo não ficar colado se a barra for pequena */
+        .content-text {
+            display: flex;
+            width: 100%;
+            justify-content: space-between;
+            align-items: center;
         }
     </style>
 </head>
 
 <body>
-    <!-- Status de Conexão (Debug) -->
-    <div class="connection-status" id="connectionStatus">
-        🔴 Desconectado
-    </div>
 
-    <!-- Lower Third -->
-    <div class="lower-third-container" id="lowerThird">
-        <div class="lower-third">
-            <div class="photo-container" id="photoContainer">
-                <div class="photo-placeholder" id="photoPlaceholder">?</div>
+    <div id="container">
+        <!-- Logo Flutuante -->
+        <div class="logo-wrapper">
+            <img src="/api/session/logo" alt="Brasão" class="logo-img"
+                onerror="this.src='https://www.sinop.mt.leg.br/logo.png'">
+        </div>
+
+        <!-- Barras que saem da borda -->
+        <div class="bars-container">
+            <!-- Camada 1: Sessão | Data -->
+            <div class="bar top-bar">
+                <span id="session-info">...</span>
+                <span id="current-date">...</span>
             </div>
-            <div class="info-container">
-                <div class="speaker-name" id="speakerName">Nome do Vereador</div>
-                <div class="speaker-party" id="speakerParty">Partido</div>
+
+            <!-- Camada 2: Nome do Orador -->
+            <div class="bar middle-bar" id="vereador-nome"></div>
+
+            <!-- Camada 3: Website -->
+            <div class="bar bottom-bar">
+                www.sinop.mt.leg.br
             </div>
         </div>
     </div>
 
-    <!-- Timer -->
-    <div class="timer-container" id="timerContainer">
-        <div class="timer-display" id="timerDisplay">00:00</div>
-        <div class="timer-label">TEMPO RESTANTE</div>
-    </div>
-
     <script>
-        // Configuração
-        const DELAY_SECONDS = 10; // Delay de 10 segundos para aparecer
-        const WARNING_THRESHOLD = 30; // Avisar quando faltar 30 segundos
+        const socket = io('http://' + document.domain + ':' + location.port, {
+            transports: ['polling'], // Forçar polling para evitar erros de WS local
+            upgrade: false
+        });
+        const container = document.getElementById('container');
+        const nomeEl = document.getElementById('vereador-nome');
+        const sessionEl = document.getElementById('session-info');
+        const dateEl = document.getElementById('current-date');
 
-        // Estado
-        let socket = null;
-        let delayTimeout = null;
-        let timerInterval = null;
-        let currentSpeaker = null;
-        let remainingSeconds = 0;
-        let isRunning = false;
+        let sessionText = "SESSÃO ORDINÁRIA";
+        let currentDate = new Date().toLocaleDateString('pt-BR');
 
-        // Elementos DOM
-        const elements = {
-            connectionStatus: document.getElementById('connectionStatus'),
-            lowerThird: document.getElementById('lowerThird'),
-            timerContainer: document.getElementById('timerContainer'),
-            photoContainer: document.getElementById('photoContainer'),
-            photoPlaceholder: document.getElementById('photoPlaceholder'),
-            speakerName: document.getElementById('speakerName'),
-            speakerParty: document.getElementById('speakerParty'),
-            timerDisplay: document.getElementById('timerDisplay')
-        };
-
-        // Conectar ao servidor WebSocket
-        function connectWebSocket() {
-            socket = io('http://127.0.0.1:5000');
-
-            socket.on('connect', () => {
-                console.log('✅ Conectado ao servidor');
-                elements.connectionStatus.textContent = '🟢 Conectado';
-                elements.connectionStatus.classList.add('connected');
-
-                // Solicitar estado atual
-                socket.emit('request_state');
-            });
-
-            socket.on('disconnect', () => {
-                console.log('❌ Desconectado do servidor');
-                elements.connectionStatus.textContent = '🔴 Desconectado';
-                elements.connectionStatus.classList.remove('connected');
-            });
-
-            // Eventos do sistema
-            socket.on('speaker_selected', handleSpeakerSelected);
-            socket.on('speaker_cleared', handleSpeakerCleared);
-            socket.on('timer_start', handleTimerStart);
-            socket.on('timer_pause', handleTimerPause);
-            socket.on('timer_stop', handleTimerStop);
-            socket.on('timer_update', handleTimerUpdate);
-            socket.on('state_update', handleStateUpdate);
+        // 1. Buscar Cores Dinâmicas da API
+        function loadColors() {
+            fetch('/api/session/colors')
+                .then(res => res.json())
+                .then(colors => {
+                    if (colors.primary) document.documentElement.style.setProperty('--primary-color', colors.primary);
+                    if (colors.secondary) document.documentElement.style.setProperty('--secondary-color', colors.secondary);
+                })
+                .catch(err => console.error("Erro ao carregar cores:", err));
         }
 
-        // Handlers de eventos
-        function handleSpeakerSelected(data) {
-            console.log('🎤 Orador selecionado:', data);
-            currentSpeaker = data;
-            updateSpeakerDisplay();
+        // 2. Buscar Informações da Sessão
+        function loadSessionInfo() {
+            if (isTestMode) return;
+            fetch('/api/session/info')
+                .then(res => res.json())
+                .then(data => {
+                    const rawName = data.session_name || data.session_number || "";
+                    sessionText = rawName.trim() || "SESSÃO ORDINÁRIA";
+                    console.log("Sessão carregada:", sessionText);
+                    updateDisplay();
+                })
+                .catch(err => console.error("Erro ao carregar info da sessão:", err));
         }
 
-        function handleSpeakerCleared() {
-            console.log('🔇 Orador removido');
-            currentSpeaker = null;
-            hideLowerThird();
-        }
-
-        function handleTimerStart(data) {
-            console.log('▶️ Timer iniciado:', data);
-            remainingSeconds = data.remaining_seconds;
-            isRunning = true;
-
-            // Aplicar delay antes de mostrar
-            clearTimeout(delayTimeout);
-            delayTimeout = setTimeout(() => {
-                showLowerThird();
-                startLocalTimer();
-            }, DELAY_SECONDS * 1000);
-        }
-
-        function handleTimerPause(data) {
-            console.log('⏸️ Timer pausado:', data);
-            remainingSeconds = data.remaining_seconds;
-            isRunning = false;
-            stopLocalTimer();
-            updateTimerDisplay();
-        }
-
-        function handleTimerStop() {
-            console.log('⏹️ Timer parado');
-            isRunning = false;
-            stopLocalTimer();
-            hideLowerThird();
-            clearTimeout(delayTimeout);
-        }
-
-        function handleTimerUpdate(data) {
-            console.log('⏱️ Timer atualizado:', data.remaining_seconds);
-            remainingSeconds = data.remaining_seconds;
-            updateTimerDisplay();
-        }
-
-        function handleStateUpdate(data) {
-            console.log('📊 Estado atualizado:', data);
-
-            if (data.speaker) {
-                currentSpeaker = data.speaker;
-                updateSpeakerDisplay();
+        function updateDisplay(nome = null) {
+            // Só atualiza nome se passado explicitamente (pode ser string vazia)
+            if (nome !== null) {
+                nomeEl.textContent = nome;
             }
 
-            if (data.timer) {
-                remainingSeconds = data.timer.remaining_seconds;
-                isRunning = data.timer.is_running;
-                updateTimerDisplay();
+            // Garante que sessionText tenha valor
+            if (!sessionText || sessionText.trim() === "") {
+                sessionText = "SESSÃO ORDINÁRIA";
+            }
 
-                if (isRunning) {
-                    showLowerThird();
-                    startLocalTimer();
+            sessionEl.textContent = sessionText;
+            dateEl.textContent = new Date().toLocaleDateString('pt-BR');
+        }
+
+        let isTimerRunning = false;
+        let hasSpeaker = false;
+        let displayTimeout;
+        const SHOW_DELAY = 1000;
+
+        // Função central para controlar visibilidade
+        function checkVisibility() {
+            console.log(`Check Visibility: Speaker=${hasSpeaker}, Timer=${isTimerRunning}`);
+
+            if (hasSpeaker && isTimerRunning) {
+                // Se ambos true, mostra (com debounce se necessário, mas aqui direto)
+                // Se já estiver visível, não faz nada
+                if (!container.classList.contains('visible')) {
+                    // Limpa timeout anterior se houver
+                    clearTimeout(displayTimeout);
+                    displayTimeout = setTimeout(() => {
+                        container.classList.add('visible');
+                        console.log('VISIBILIDADE: Ligada');
+                    }, SHOW_DELAY);
                 }
-            }
-        }
-
-        // Funções de display
-        function updateSpeakerDisplay() {
-            if (!currentSpeaker) return;
-
-            elements.speakerName.textContent = currentSpeaker.nome;
-            elements.speakerParty.textContent = currentSpeaker.partido;
-
-            if (currentSpeaker.foto) {
-                elements.photoContainer.innerHTML = `<img src="${currentSpeaker.foto}" alt="${currentSpeaker.nome}">`;
             } else {
-                const initial = currentSpeaker.nome.charAt(0).toUpperCase();
-                elements.photoPlaceholder.textContent = initial;
+                // Se um dos dois for false, esconde imediatamente
+                clearTimeout(displayTimeout);
+                container.classList.remove('visible');
+                console.log('VISIBILIDADE: Desligada');
             }
         }
 
-        function updateTimerDisplay() {
-            const minutes = Math.floor(remainingSeconds / 60);
-            const seconds = remainingSeconds % 60;
-            const timeString = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        const isTestMode = new URLSearchParams(window.location.search).has('test');
 
-            elements.timerDisplay.textContent = timeString;
+        // 3. Handlers de Socket
+        socket.on('connect', () => {
+            console.log('Conectado ao servidor');
+            loadColors();
+            loadSessionInfo();
+            // Só busca estado no modo normal
+            if (!isTestMode) fetchState();
+        });
 
-            // Adicionar warning se tempo está acabando
-            if (remainingSeconds <= WARNING_THRESHOLD && remainingSeconds > 0) {
-                elements.timerDisplay.classList.add('warning');
+        socket.on('config_updated', () => {
+            console.log('Evento: config_updated');
+            if (!isTestMode) {
+                loadColors();
+                loadSessionInfo();
+            }
+        });
+
+        socket.on('speaker_selected', (data) => {
+            if (isTestMode) return; // Ignorar no modo teste
+
+            console.log('Evento: speaker_selected', data);
+            if (data && data.speaker) {
+                updateDisplay(data.speaker.nome);
+                hasSpeaker = true;
             } else {
-                elements.timerDisplay.classList.remove('warning');
+                updateDisplay("");
+                hasSpeaker = false;
             }
-        }
+            checkVisibility();
+        });
 
-        function showLowerThird() {
-            elements.lowerThird.classList.add('visible');
-            elements.timerContainer.classList.add('visible');
-        }
+        socket.on('timer_start', () => {
+            if (isTestMode) return;
+            console.log('Evento: timer_start');
+            isTimerRunning = true;
+            checkVisibility();
+        });
 
-        function hideLowerThird() {
-            elements.lowerThird.classList.remove('visible');
-            elements.timerContainer.classList.remove('visible');
-        }
+        socket.on('timer_stop', () => {
+            if (isTestMode) return;
+            console.log('Evento: timer_stop');
+            isTimerRunning = false;
+            checkVisibility();
+        });
 
-        function startLocalTimer() {
-            stopLocalTimer();
+        socket.on('timer_pause', () => {
+            // Não faz nada por enquanto
+        });
 
-            timerInterval = setInterval(() => {
-                if (remainingSeconds > 0) {
-                    remainingSeconds--;
-                    updateTimerDisplay();
-                } else {
-                    stopLocalTimer();
-                }
-            }, 1000);
-        }
+        // Estado inicial
+        function fetchState() {
+            if (isTestMode) return;
 
-        function stopLocalTimer() {
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                timerInterval = null;
-            }
+            fetch('/api/state')
+                .then(res => res.json())
+                .then(state => {
+                    console.log('Estado inicial recebido:', state);
+                    loadSessionInfo();
+
+                    if (state.speaker) {
+                        updateDisplay(state.speaker.nome);
+                        hasSpeaker = true;
+                    } else {
+                        hasSpeaker = false;
+                    }
+
+                    if (state.timer && state.timer.is_running) {
+                        isTimerRunning = true;
+                    } else {
+                        isTimerRunning = false;
+                    }
+
+                    if (hasSpeaker && isTimerRunning) {
+                        container.classList.add('visible');
+                    } else {
+                        container.classList.remove('visible');
+                    }
+                })
+                .catch(err => console.error("Erro ao buscar estado:", err));
         }
 
         // Inicializar
-        window.addEventListener('load', () => {
-            console.log('🚀 Lower Third carregado');
-            connectWebSocket();
-        });
+        loadColors();
+        if (!isTestMode) loadSessionInfo();
 
-        // Cleanup ao fechar
-        window.addEventListener('beforeunload', () => {
-            if (socket) {
-                socket.disconnect();
-            }
-            stopLocalTimer();
-            clearTimeout(delayTimeout);
-        });
+        if (isTestMode) {
+            console.log("MODO TESTE ATIVADO");
+            setTimeout(() => {
+                nomeEl.textContent = "VEREADOR DE TESTE";
+                sessionText = "SESSÃO DE TESTE";
+                hasSpeaker = true;
+                isTimerRunning = true;
+                updateDisplay();
+                checkVisibility();
+            }, 500);
+        } else {
+            container.classList.remove('visible');
+            fetchState();
+        }
     </script>
 </body>
 

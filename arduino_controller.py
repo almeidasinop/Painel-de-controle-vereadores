@@ -66,7 +66,8 @@ class ArduinoController:
             self.serial_port = serial.Serial(
                 port=port_name,
                 baudrate=self.baudrate,
-                timeout=self.timeout
+                timeout=self.timeout,
+                write_timeout=1.0  # Evitar travamento na escrita
             )
             
             # Aguardar inicialização do Arduino

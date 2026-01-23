@@ -3,18 +3,23 @@ Sistema de Controle de Tribuna Parlamentar
 Servidor Flask-SocketIO para comunicação com Lower Third Web
 """
 
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, send_file
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import json
 import os
 from datetime import datetime
+import sys
+
+# Adicionar diretório atual ao path para importar módulos locais
+sys.path.append(os.path.dirname(__file__))
+from session_config import SessionConfig
 
 # Configuração do Flask
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'tribuna-parlamentar-2024'
 CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 
 # Estado global do sistema
 system_state = {
@@ -25,13 +30,46 @@ system_state = {
         'is_paused': False
     },
     'speaker': None,
-    'audio_muted': True,  # Áudio fechado por padrão
-    'delay_seconds': 10,  # Delay para Lower Third
+    'audio_muted': True,
+    'delay_seconds': 10,
     'connections': {
         'arduino': False,
         'clients': 0
     }
 }
+
+# ===================================
+# Rotas HTTP
+# ===================================
+
+@app.route('/api/session/logo')
+def get_session_logo():
+    """Servir a logo configurada na sessão"""
+    try:
+        config = SessionConfig()
+        logo_path = config.get_logo()
+        
+        if logo_path and os.path.exists(logo_path):
+            return send_file(logo_path)
+        else:
+            return "Logo não encontrada", 404
+    except Exception as e:
+        return str(e), 500
+
+@app.route('/api/session/info')
+def get_session_info():
+    """Obter informações da sessão"""
+    config = SessionConfig()
+    return jsonify({
+        'session_name': config.get_session_name(),
+        'session_number': config.get_session_name() # Fallback de compatibilidade
+    })
+
+@app.route('/api/session/colors')
+def get_session_colors():
+    """Obter cores do tema"""
+    config = SessionConfig()
+    return jsonify(config.get_colors())
 
 def load_vereadores():
     """Carrega lista de vereadores do JSON"""
@@ -64,101 +102,122 @@ def get_config():
         'delay_seconds': system_state['delay_seconds']
     })
 
+from flask import request
+
 # ===================================
-# WebSocket Events
+# Rotas de Controle HTTP (API para o Desktop)
+# ===================================
+
+@app.route('/api/action/timer', methods=['POST'])
+def action_timer():
+    """Receber comando do timer via HTTP"""
+    data = request.json
+    action = data.get('action') # start, pause, stop, update
+    
+    if action == 'start':
+        server_update_timer(True, False, data.get('remaining'), data.get('total'))
+    elif action == 'pause':
+        server_update_timer(False, True, data.get('remaining'))
+    elif action == 'stop':
+        server_update_timer(False, False, data.get('total'), data.get('total'))
+    elif action == 'update':
+        server_update_timer(True, False, data.get('remaining'))
+        
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/action/speaker', methods=['POST'])
+def action_speaker():
+    """Receber orador via HTTP"""
+    data = request.json
+    speaker = data.get('speaker')
+    server_update_speaker(speaker)
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/action/audio', methods=['POST'])
+def action_audio():
+    """Controle de áudio via HTTP"""
+    data = request.json
+    server_update_audio(data.get('muted'))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/action/arduino', methods=['POST'])
+def action_arduino():
+    """Status arduino via HTTP"""
+    data = request.json
+    server_update_arduino(data.get('connected'))
+    return jsonify({'status': 'ok'})
+
+@app.route('/api/action/config_update', methods=['POST'])
+def action_config_update():
+    """Notificar atualização de configuração"""
+    socketio.emit('config_updated')
+    return jsonify({'status': 'ok'})
+
+# ===================================
+# Funções Internas de Atualização
+# ===================================
+
+def server_update_timer(is_running, is_paused, remaining, total=None):
+    """Atualiza estado do timer e emite evento"""
+    system_state['timer']['is_running'] = is_running
+    system_state['timer']['is_paused'] = is_paused
+    system_state['timer']['remaining_seconds'] = remaining
+    if total is not None:
+        system_state['timer']['total_seconds'] = total
+    
+    event = 'timer_update'
+    if is_running: event = 'timer_start'
+    elif is_paused: event = 'timer_pause'
+    elif not is_running and not is_paused and remaining == system_state['timer']['total_seconds']: event = 'timer_stop'
+    
+    socketio.emit(event, system_state['timer'])
+    # socketio.emit('state_update', system_state) # Opcional, mas carrega network
+
+def server_update_speaker(speaker_data):
+    """Atualiza orador e emite evento"""
+    system_state['speaker'] = speaker_data
+    if speaker_data:
+        socketio.emit('speaker_selected', {'speaker': speaker_data, 'nome': speaker_data.get('nome')})
+    else:
+        socketio.emit('speaker_selected', {'speaker': None}) # Front espera speaker: null
+        # Ou speaker_cleared
+        socketio.emit('speaker_cleared')
+
+def server_update_audio(muted):
+    """Atualiza áudio e emite evento"""
+    system_state['audio_muted'] = muted
+    socketio.emit('audio_toggle', {'muted': muted})
+
+def server_update_arduino(connected):
+    """Atualiza status arduino"""
+    system_state['connections']['arduino'] = connected
+    socketio.emit('arduino_status', {'connected': connected})
+
+# ===================================
+# WebSocket Events (Client-Side)
 # ===================================
 
 @socketio.on('connect')
 def handle_connect():
-    """Cliente conectado"""
     system_state['connections']['clients'] += 1
     print(f"✅ Cliente conectado. Total: {system_state['connections']['clients']}")
     emit('state_update', system_state)
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Cliente desconectado"""
     system_state['connections']['clients'] -= 1
     print(f"❌ Cliente desconectado. Total: {system_state['connections']['clients']}")
 
+# Mantemos os handlers antigos para compatibilidade caso algum cliente tente enviar
 @socketio.on('timer_start')
 def handle_timer_start(data):
-    """Iniciar cronômetro"""
-    system_state['timer']['is_running'] = True
-    system_state['timer']['is_paused'] = False
-    system_state['timer']['remaining_seconds'] = data.get('remaining_seconds', 0)
-    system_state['timer']['total_seconds'] = data.get('total_seconds', 0)
-    
-    print(f"⏱️ Timer iniciado: {data.get('remaining_seconds')}s")
-    emit('timer_start', system_state['timer'], broadcast=True)
-
-@socketio.on('timer_pause')
-def handle_timer_pause(data):
-    """Pausar cronômetro"""
-    system_state['timer']['is_running'] = False
-    system_state['timer']['is_paused'] = True
-    system_state['timer']['remaining_seconds'] = data.get('remaining_seconds', 0)
-    
-    print(f"⏸️ Timer pausado: {data.get('remaining_seconds')}s")
-    emit('timer_pause', system_state['timer'], broadcast=True)
+    server_update_timer(True, False, data.get('remaining_seconds'), data.get('total_seconds'))
 
 @socketio.on('timer_stop')
 def handle_timer_stop():
-    """Parar cronômetro"""
-    system_state['timer']['is_running'] = False
-    system_state['timer']['is_paused'] = False
-    system_state['timer']['remaining_seconds'] = system_state['timer']['total_seconds']
-    
-    print("⏹️ Timer parado")
-    emit('timer_stop', system_state['timer'], broadcast=True)
-
-@socketio.on('timer_update')
-def handle_timer_update(data):
-    """Atualizar tempo restante"""
-    system_state['timer']['remaining_seconds'] = data.get('remaining_seconds', 0)
-    emit('timer_update', system_state['timer'], broadcast=True)
-
-@socketio.on('speaker_selected')
-def handle_speaker_selected(data):
-    """Vereador selecionado"""
-    system_state['speaker'] = data.get('speaker')
-    
-    print(f"🎤 Orador selecionado: {data.get('speaker', {}).get('nome', 'N/A')}")
-    emit('speaker_selected', system_state['speaker'], broadcast=True)
-
-@socketio.on('speaker_cleared')
-def handle_speaker_cleared():
-    """Limpar orador"""
-    system_state['speaker'] = None
-    
-    print("🔇 Orador removido")
-    emit('speaker_cleared', broadcast=True)
-
-@socketio.on('audio_toggle')
-def handle_audio_toggle(data):
-    """Toggle de áudio"""
-    system_state['audio_muted'] = data.get('muted', True)
-    
-    status = "cortado" if system_state['audio_muted'] else "ativo"
-    print(f"🔊 Áudio {status}")
-    emit('audio_toggle', {'muted': system_state['audio_muted']}, broadcast=True)
-
-@socketio.on('arduino_status')
-def handle_arduino_status(data):
-    """Status da conexão Arduino"""
-    system_state['connections']['arduino'] = data.get('connected', False)
-    
-    status = "conectado" if system_state['connections']['arduino'] else "desconectado"
-    print(f"🔌 Arduino {status}")
-    emit('arduino_status', {'connected': system_state['connections']['arduino']}, broadcast=True)
-
-@socketio.on('request_state')
-def handle_request_state():
-    """Cliente solicitando estado atual"""
-    emit('state_update', system_state)
+    server_update_timer(False, False, system_state['timer']['total_seconds'])
 
 def run_server(host='127.0.0.1', port=5000, debug=False):
-    """Iniciar servidor Flask-SocketIO"""
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║  🏛️  Sistema de Controle de Tribuna Parlamentar             ║
@@ -170,7 +229,6 @@ def run_server(host='127.0.0.1', port=5000, debug=False):
 ║  Pressione Ctrl+C para encerrar                             ║
 ╚══════════════════════════════════════════════════════════════╝
     """)
-    
     socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
 
 if __name__ == '__main__':

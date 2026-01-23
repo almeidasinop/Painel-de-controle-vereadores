@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual de Montagem - Sistema de Tribuna</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F8FAFC;
+            color: #1E293B;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            height: 350px;
+            max-height: 400px;
+        }
+
+        .glass-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transition: transform 0.2s;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Custom Relay Diagram Styling (CSS Drawing) */
+        .relay-box {
+            width: 100%;
+            max-width: 300px;
+            height: 180px;
+            background-color: #1E40AF;
+            /* Blue-800 */
+            border-radius: 8px;
+            position: relative;
+            margin: 0 auto;
+            box-shadow: 4px 4px 0px #0F172A;
+        }
+
+        .relay-terminal {
+            width: 40px;
+            height: 40px;
+            background-color: #94A3B8;
+            /* Slate-400 */
+            border: 2px solid #CBD5E1;
+            border-radius: 50%;
+            position: absolute;
+            top: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #0F172A;
+            font-size: 12px;
+            z-index: 10;
+        }
+
+        .term-no {
+            left: 30px;
+        }
+
+        .term-com {
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .term-nc {
+            right: 30px;
+        }
+
+        .wire {
+            position: absolute;
+            background-color: #EF4444;
+            /* Red wire */
+            width: 4px;
+            z-index: 5;
+        }
+
+        .wire-cap {
+            position: absolute;
+            background-color: #F59E0B;
+            /* Amber capacitor leg */
+            width: 4px;
+            z-index: 6;
+        }
+
+        .capacitor-body {
+            position: absolute;
+            width: 60px;
+            height: 20px;
+            background-color: #F59E0B;
+            border-radius: 10px;
+            top: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 7;
+            text-align: center;
+            font-size: 10px;
+            line-height: 20px;
+            color: white;
+            font-weight: bold;
+        }
+    </style>
+    <!-- 
+    Palette Name: Tech Blueprint
+    Primary: #2563EB (Blue 600)
+    Secondary: #06B6D4 (Cyan 500)
+    Accent: #F59E0B (Amber 500)
+    Dark: #0F172A (Slate 900)
+    Light: #F8FAFC (Slate 50)
+    
+    Confirmacao de Requisitos:
+    - NO SVG: Sim
+    - NO MERMAID: Sim
+    - CHART.JS WRAPPING: Sim
+    - TOOLTIP CONFIG: Sim
+    -->
+</head>
+
+<body class="overflow-x-hidden">
+
+    <!-- HERO SECTION -->
+    <header class="bg-slate-900 text-white py-16 px-6 relative overflow-hidden">
+        <div
+            class="absolute top-0 right-0 w-64 h-64 bg-blue-600 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob">
+        </div>
+        <div
+            class="absolute top-0 left-0 w-64 h-64 bg-cyan-500 rounded-full mix-blend-multiply filter blur-3xl opacity-20 animate-blob animation-delay-2000">
+        </div>
+
+        <div class="max-w-7xl mx-auto relative z-10">
+            <div class="text-cyan-400 font-bold tracking-wider uppercase text-sm mb-2">Manual Técnico Oficial</div>
+            <h1 class="text-4xl md:text-6xl font-extrabold mb-6 leading-tight">
+                Sistema de Automação <br>
+                <span class="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-cyan-400">Para Tribuna de
+                    Áudio</span>
+            </h1>
+            <p class="text-slate-300 text-lg md:text-xl max-w-2xl mb-8">
+                Guia detalhado de componentes e especificações para montagem profissional com supressão de ruídos.
+            </p>
+            <div class="flex flex-wrap gap-4">
+                <a href="#hardware"
+                    class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition duration-300">
+                    Especificações de Compra
+                </a>
+                <a href="#wiring"
+                    class="bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-cyan-900 font-bold py-3 px-8 rounded-lg transition duration-300">
+                    Diagrama do Capacitor
+                </a>
+            </div>
+        </div>
+    </header>
+
+    <!-- INTRODUCTORY CONTEXT -->
+    <section class="max-w-6xl mx-auto px-6 py-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+            <div>
+                <h2 class="text-3xl font-bold text-slate-800 mb-4 border-l-4 border-blue-500 pl-4">Objetivo do Sistema
+                </h2>
+                <p class="text-slate-600 mb-4 text-lg leading-relaxed">
+                    Este sistema automatiza o corte e liberação do áudio em uma tribuna oficial. Utilizando um
+                    microcontrolador Arduino e relés, ele garante que o microfone esteja ativo apenas durante o tempo
+                    permitido pelo operador.
+                </p>
+                <p class="text-slate-600 font-semibold">
+                    Principais benefícios:
+                </p>
+                <ul class="list-disc list-inside text-slate-600 mt-2 space-y-2 ml-2">
+                    <li>Precisão no controle de tempo.</li>
+                    <li>Segurança operacional (Fail-Safe).</li>
+                    <li>Eliminação de ruídos de comutação (Pop).</li>
+                </ul>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-slate-100">
+                <h3 class="text-xl font-bold text-center mb-6 text-slate-700">Confiabilidade do Sistema Fail-Safe</h3>
+                <div class="chart-container">
+                    <canvas id="reliabilityChart"></canvas>
+                </div>
+                <p class="text-center text-sm text-slate-500 mt-4">
+                    A lógica Normalmente Fechado (NC) garante que o áudio funcione mesmo sem energia no sistema de
+                    controle.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <!-- HARDWARE INVENTORY & SPECS -->
+    <section id="hardware" class="bg-slate-50 py-16 px-6">
+        <div class="max-w-7xl mx-auto">
+            <h2 class="text-3xl font-bold text-center text-slate-800 mb-4">Guia de Compra: Componentes Específicos</h2>
+            <p class="text-center text-slate-600 mb-12 max-w-2xl mx-auto">
+                Para um áudio limpo, a escolha do hardware é fundamental. Abaixo estão as especificações exatas para aquisição.
+            </p>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <!-- Card 1: Microcontrolador -->
+                <div class="glass-card p-8 border-t-4 border-blue-500 flex flex-col">
+                    <div class="text-4xl mb-4 text-blue-600">📟</div>
+                    <h3 class="text-xl font-bold text-slate-800 mb-2">Microcontrolador</h3>
+                    <p class="text-slate-600 text-sm mb-4">Recomendado para estabilidade e conexão USB segura.</p>
+                    <ul class="space-y-3 mb-6 flex-grow">
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-blue-600">Modelo:</strong> Arduino Uno R3 ou Nano V3.
+                        </li>
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-blue-600">Chip:</strong> ATMega328P.
+                        </li>
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-blue-600">Cabo:</strong> USB tipo A/B (Uno) ou Mini-USB (Nano).
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Card 2: Módulo Relé -->
+                <div class="glass-card p-8 border-t-4 border-cyan-500 flex flex-col">
+                    <div class="text-4xl mb-4 text-cyan-600">🔌</div>
+                    <h3 class="text-xl font-bold text-slate-800 mb-2">Módulo Relé Profissional</h3>
+                    <p class="text-slate-600 text-sm mb-4">Essencial para isolar o ruído elétrico do áudio.</p>
+                    <ul class="space-y-3 mb-6 flex-grow">
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-cyan-600">Tipo:</strong> 2 Canais com Optoacoplamento.
+                        </li>
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-cyan-600">Tensão:</strong> Bobina de 5V DC.
+                        </li>
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-cyan-600">Contatos:</strong> 10A / 250VAC (Suporta NC/NF).
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Card 3: O Capacitor (ESPECIFICAÇÃO) -->
+                <div class="glass-card p-8 border-t-4 border-amber-500 flex flex-col">
+                    <div class="text-4xl mb-4 text-amber-500">💎</div>
+                    <h3 class="text-xl font-bold text-slate-800 mb-2">Capacitor de Filtro</h3>
+                    <p class="text-slate-600 text-sm mb-4">O segredo para eliminar o "estalo" (pop) da tribuna.</p>
+                    <ul class="space-y-3 mb-6 flex-grow">
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-amber-600">Tipo:</strong> Cerâmico Multicamadas.
+                        </li>
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-amber-600">Valor:</strong> 100nF (Código impresso: <b>104</b>).
+                        </li>
+                        <li class="text-sm text-slate-700">
+                            <strong class="text-amber-600">Tensão Mín.:</strong> 50V (Standard).
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- WIRING DIAGRAMS (LOGIC & AUDIO) -->
+    <section id="wiring" class="max-w-7xl mx-auto px-6 py-16">
+        <div class="text-center mb-16">
+            <h2 class="text-3xl font-bold text-slate-800 mb-4">Diagrama de Instalação do Capacitor</h2>
+            <p class="text-slate-600 max-w-3xl mx-auto">
+                Abaixo detalhamos como o capacitor atua como um "Snubber" para absorver transientes elétricos.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+
+            <!-- Logic Connection (Table) -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200">
+                <div class="bg-slate-800 p-4">
+                    <h3 class="text-white font-bold flex items-center">
+                        <span class="text-cyan-400 mr-2 text-xl">⚡</span>
+                        Conexão Lógica (Arduino -> Relé)
+                    </h3>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-slate-600 mb-6">
+                        Conecte os pinos digitais do Arduino às entradas de sinal do módulo relé. Use jumpers
+                        macho-fêmea.
+                    </p>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200">
+                                    <th class="p-4 font-semibold text-slate-700">Arduino Uno/Nano</th>
+                                    <th class="p-4 font-semibold text-slate-700">Módulo Relé</th>
+                                    <th class="p-4 font-semibold text-slate-700">Função</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr>
+                                    <td class="p-4 font-mono text-red-600 font-bold">5V</td>
+                                    <td class="p-4 font-mono">VCC</td>
+                                    <td class="p-4 text-sm">Alimentação Positiva</td>
+                                </tr>
+                                <tr>
+                                    <td class="p-4 font-mono text-slate-900 font-bold">GND</td>
+                                    <td class="p-4 font-mono">GND</td>
+                                    <td class="p-4 text-sm">Terra (Comum)</td>
+                                </tr>
+                                <tr class="bg-yellow-50">
+                                    <td class="p-4 font-mono text-blue-600 font-bold">Pino 7</td>
+                                    <td class="p-4 font-mono">IN1</td>
+                                    <td class="p-4 text-sm font-medium">Controle Mic 1</td>
+                                </tr>
+                                <tr class="bg-green-50">
+                                    <td class="p-4 font-mono text-blue-600 font-bold">Pino 8</td>
+                                    <td class="p-4 font-mono">IN2</td>
+                                    <td class="p-4 text-sm font-medium">Controle Mic 2</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Audio Connection (CSS Diagram) -->
+            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200 flex flex-col">
+                <div class="bg-blue-900 p-4">
+                    <h3 class="text-white font-bold flex items-center">
+                        <span class="text-amber-400 mr-2 text-xl">🔊</span>
+                        Filtro Snubber (Capacitor 104)
+                    </h3>
+                </div>
+                <div class="p-6 flex-grow flex flex-col justify-center bg-slate-50">
+                    <p class="text-sm text-slate-600 mb-8 text-center font-semibold">
+                        Posicionamento Estratégico do Capacitor Cerâmico 100nF
+                    </p>
+
+                    <!-- CSS DRAWING OF RELAY -->
+                    <div class="relay-box mb-8">
+                        <div class="absolute top-2 left-2 text-white/50 text-xs font-mono uppercase tracking-tighter">Vista Bornes Azuis</div>
+
+                        <!-- Terminals -->
+                        <div class="relay-terminal term-no bg-slate-300 text-slate-500">NO</div>
+                        <div class="relay-terminal term-com bg-white ring-4 ring-blue-500/30">COM</div>
+                        <div class="relay-terminal term-nc bg-white ring-4 ring-blue-500/30">NC</div>
+
+                        <!-- Wires -->
+                        <!-- Input Wire -->
+                        <div class="wire bg-red-600 h-20 bottom-0 left-1/2 -translate-x-1/2"></div>
+                        <div
+                            class="absolute bottom-[-25px] left-1/2 -translate-x-1/2 text-xs font-bold text-slate-700 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
+                            Mic (+)</div>
+
+                        <!-- Output Wire -->
+                        <div class="wire bg-red-600 h-10 right-[48px] top-[60px]"></div>
+                        <div class="wire bg-red-600 w-[80px] right-[-30px] top-[100px] h-1"></div>
+                        <div class="wire bg-red-600 h-[40px] right-[48px] top-[60px]"></div>
+                        <div
+                            class="absolute top-[90px] right-[-110px] text-xs font-bold text-slate-700 bg-white px-2 py-1 rounded border border-slate-200 shadow-sm">
+                            Mesa (+)</div>
+
+                        <!-- Capacitor Legs -->
+                        <div class="wire-cap h-[40px] left-[52%] top-[40px] rotate-[-15deg]"></div>
+                        <div class="wire-cap h-[40px] right-[52px] top-[40px] rotate-[15deg]"></div>
+
+                        <!-- Capacitor Body -->
+                        <div class="capacitor-body shadow-lg border border-amber-600">104</div>
+                        <div class="absolute top-[65px] left-1/2 -translate-x-1/2 text-[10px] text-amber-200 font-mono font-bold">
+                            SUPRESSOR</div>
+
+                    </div>
+                    <div class="text-center text-xs text-slate-500 max-w-xs mx-auto italic">
+                        O capacitor cerâmico 104 não tem polaridade. Ele atua filtrando o pico de alta frequência gerado pela centelha mecânica do relé.
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- NOISE REDUCTION ANALYSIS -->
+    <section class="bg-white py-16 px-6">
+        <div class="max-w-5xl mx-auto">
+            <h2 class="text-3xl font-bold text-slate-800 mb-6 text-center">Eficácia do Filtro Cerâmico 104</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                <div>
+                    <p class="text-slate-600 mb-4 text-lg">
+                        O capacitor cerâmico de 100nF (104) é escolhido por sua alta velocidade de resposta. 
+                    </p>
+                    <p class="text-slate-600 mb-4">
+                        Ele atua drenando a energia transiente que saltaria entre os contatos COM e NC no momento da abertura, garantindo que o som seja cortado de forma "suave" eletricamente.
+                    </p>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                        <h4 class="font-bold text-blue-800 mb-1">Por que Cerâmico?</h4>
+                        <p class="text-sm text-blue-900">
+                            Capacitores eletrolíticos não servem aqui por serem polarizados e mais lentos. O cerâmico tipo "disco" ou "multicamada" é o padrão industrial para filtros de ruído.
+                        </p>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="noiseChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- TROUBLESHOOTING SECTION -->
+    <section class="max-w-7xl mx-auto px-6 py-16 bg-slate-50 border-t border-slate-200">
+        <h2 class="text-3xl font-bold text-slate-800 mb-12 text-center">Dicas de Compra e Diagnóstico</h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Problem 1 -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-red-500">
+                <h3 class="font-bold text-slate-800 mb-2 flex items-center">
+                    <span class="text-red-500 mr-2">🛒</span> Onde Comprar?
+                </h3>
+                <p class="text-sm text-slate-600 mb-4">
+                    Componentes comuns encontrados em lojas de eletrônica.
+                </p>
+                <div class="bg-slate-100 p-3 rounded text-xs text-slate-700">
+                    <strong>Sugestão:</strong> Procure kits de "Iniciante Arduino". O capacitor 104 costuma vir em conjuntos de resistores/capacitores.
+                </div>
+            </div>
+
+            <!-- Problem 2 -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-amber-500">
+                <h3 class="font-bold text-slate-800 mb-2 flex items-center">
+                    <span class="text-amber-500 mr-2">🔋</span> Fonte de Energia
+                </h3>
+                <p class="text-sm text-slate-600 mb-4">
+                    O Arduino pode falhar se a porta USB não fornecer corrente suficiente para os dois relés.
+                </p>
+                <div class="bg-slate-100 p-3 rounded text-xs text-slate-700">
+                    <strong>Solução:</strong> Utilize uma fonte de 5V 2A externa (tipo carregador de celular) conectada ao Arduino via USB para maior torque mecânico nos relés.
+                </div>
+            </div>
+
+            <!-- Problem 3 -->
+            <div class="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
+                <h3 class="font-bold text-slate-800 mb-2 flex items-center">
+                    <span class="text-blue-500 mr-2">📦</span> Proteção Física
+                </h3>
+                <p class="text-sm text-slate-600 mb-4">
+                    Ruídos externos podem ser captados pelos fios soltos.
+                </p>
+                <div class="bg-slate-100 p-3 rounded text-xs text-slate-700">
+                    <strong>Solução:</strong> Acomode tudo em uma <b>Caixa Patola</b>. O plástico isola os contatos elétricos e evita curto-circuitos acidentais na tribuna.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="bg-slate-900 text-slate-400 py-8 text-center border-t border-slate-800">
+        <p class="text-sm">Sistema de Tribuna - Manual de Hardware v1.1</p>
+    </footer>
+
+    <!-- SCRIPTS FOR CHARTS -->
+    <script>
+        // --- UTILITY: WRAP LONG LABELS ---
+        function wrapLabel(label) {
+            const maxLength = 16;
+            if (label.length <= maxLength) return label;
+
+            const words = label.split(' ');
+            const lines = [];
+            let currentLine = words[0];
+
+            for (let i = 1; i < words.length; i++) {
+                if (currentLine.length + 1 + words[i].length <= maxLength) {
+                    currentLine += ' ' + words[i];
+                } else {
+                    lines.push(currentLine);
+                    currentLine = words[i];
+                }
+            }
+            lines.push(currentLine);
+            return lines;
+        }
+
+        // --- GLOBAL CHART DEFAULTS ---
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        Chart.defaults.color = '#64748B';
+
+        const commonTooltip = {
+            callbacks: {
+                title: function (tooltipItems) {
+                    const item = tooltipItems[0];
+                    let label = item.chart.data.labels[item.dataIndex];
+                    if (Array.isArray(label)) {
+                        return label.join(' ');
+                    } else {
+                        return label;
+                    }
+                }
+            }
+        };
+
+        // --- CHART 1: RELIABILITY / SYSTEM STATES (Donut) ---
+        const ctxReliability = document.getElementById('reliabilityChart').getContext('2d');
+        new Chart(ctxReliability, {
+            type: 'doughnut',
+            data: {
+                labels: ['Fail-Safe (Sem Energia)', 'Modo Ativo (Som Livre)', 'Modo Bloqueio (Som Cortado)'].map(wrapLabel),
+                datasets: [{
+                    data: [100, 100, 100],
+                    backgroundColor: [
+                        '#10B981', // Emerald
+                        '#3B82F6', // Blue
+                        '#EF4444'  // Red
+                    ],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { padding: 20, usePointStyle: true }
+                    },
+                    tooltip: commonTooltip,
+                    title: {
+                        display: true,
+                        text: 'Lógica de Funcionamento NC'
+                    }
+                },
+                cutout: '65%'
+            }
+        });
+
+        // --- CHART 2: NOISE LEVELS (Bar) ---
+        const ctxNoise = document.getElementById('noiseChart').getContext('2d');
+        new Chart(ctxNoise, {
+            type: 'bar',
+            data: {
+                labels: ['Sem Capacitor (Ruído Alto)', 'Com Capacitor 104 (Filtro)', 'Blindagem + Filtro 104'].map(wrapLabel),
+                datasets: [{
+                    label: 'Pico de Ruído (Conceitual)',
+                    data: [90, 20, 5],
+                    backgroundColor: [
+                        '#EF4444', 
+                        '#F59E0B', 
+                        '#10B981'  
+                    ],
+                    borderRadius: 6,
+                    barThickness: 40
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Nível de Ruído' },
+                        grid: { display: false }
+                    },
+                    x: {
+                        grid: { display: false }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: commonTooltip,
+                    title: {
+                        display: true,
+                        text: 'Eficácia do Capacitor 104 na Tribuna'
+                    }
+                }
+            }
+        });
+
+    </script>
+
+    <!-- NO COMMENTS OR SVG OUTPUT -->
+</body>
+
+</html>

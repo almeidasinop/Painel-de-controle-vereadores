@@ -7,7 +7,11 @@ echo ╚════════════════════════
 echo.
 
 REM Verificar se ambiente virtual existe
-if not exist venv (
+REM Verificar se ambiente virtual existe
+set VENV_DIR=venv
+if exist .venv set VENV_DIR=.venv
+
+if not exist %VENV_DIR% (
     echo ❌ Ambiente virtual não encontrado!
     echo.
     echo Execute primeiro: install.bat
@@ -17,29 +21,25 @@ if not exist venv (
 
 REM Ativar ambiente virtual
 echo 🔧 Ativando ambiente virtual...
-call venv\Scripts\activate.bat
+call %VENV_DIR%\Scripts\activate.bat
 echo.
 
 REM Verificar se servidor já está rodando
 echo 🔍 Verificando se servidor já está ativo...
 netstat -an | findstr ":5000" >nul 2>&1
 if %errorlevel% equ 0 (
-    echo ⚠️  Servidor já está rodando na porta 5000
+    echo ⚠️  Servidor já está rodando na porta 5000. Utilizando instância existente.
     echo.
-    echo Escolha uma opção:
-    echo 1. Continuar (pode causar erro)
-    echo 2. Cancelar
+) else (
+    REM Iniciar servidor em background apenas se não estiver rodando
+    echo 🚀 Iniciando servidor Flask-SocketIO...
+    start /b python server.py
+    timeout /t 3 /nobreak >nul
+    echo ✅ Servidor iniciado
     echo.
-    choice /c 12 /n /m "Opção: "
-    if errorlevel 2 exit /b 0
 )
 
-REM Iniciar servidor em background
-echo 🚀 Iniciando servidor Flask-SocketIO...
-start /b python server.py
-timeout /t 3 /nobreak >nul
-echo ✅ Servidor iniciado
-echo.
+
 
 REM Iniciar interface desktop
 echo 🖥️  Iniciando Painel do Presidente...
