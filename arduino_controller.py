@@ -1,242 +1,135 @@
-"""
-Módulo de Comunicação Serial com Arduino
-Controle de Relé para Corte de Áudio
-"""
-
 import serial
 import serial.tools.list_ports
-import threading
 import time
-from typing import Optional, Callable
+import threading
 
 class ArduinoController:
-    """Controlador de comunicação com Arduino via Serial"""
+    """Controlador para comunicação Serial com Arduino"""
     
-    def __init__(self, baudrate: int = 9600, timeout: float = 1.0):
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.serial_port: Optional[serial.Serial] = None
-        self.port_name: Optional[str] = None
+    def __init__(self):
+        self.serial = None
+        self.port = None
         self.is_connected = False
-        self.auto_reconnect = True
-        self.reconnect_thread: Optional[threading.Thread] = None
-        self.on_connection_change: Optional[Callable] = None
+        self.on_connection_change = None # Callback function (bool, port_name)
+        self.lock = threading.Lock()
         
-    def list_available_ports(self):
-        """Lista todas as portas COM disponíveis"""
-        ports = serial.tools.list_ports.comports()
-        available_ports = []
-        
+    def find_arduino(self):
+        """Tenta encontrar uma porta serial com Arduino conectado"""
+        ports = list(serial.tools.list_ports.comports())
         for port in ports:
-            available_ports.append({
-                'device': port.device,
-                'description': port.description,
-                'hwid': port.hwid
-            })
+            # Lógica simples: tenta conectar em portas com descrição típica ou todas COM disponíveis
+            # Em Windows, Arduinos geralmente aparecem como "USB Serial Device" ou "Arduino Uno"
+            if "Arduino" in port.description or "USB Serial" in port.description:
+                return port.device
         
-        return available_ports
-    
-    def connect(self, port_name: str = None) -> bool:
-        """
-        Conecta ao Arduino
-        Se port_name não for especificado, tenta detectar automaticamente
-        """
-        try:
-            if port_name is None:
-                # Tentar detectar Arduino automaticamente
-                ports = self.list_available_ports()
-                for port in ports:
-                    if 'Arduino' in port['description'] or 'CH340' in port['description']:
-                        port_name = port['device']
-                        break
+        # Se não achou por nome, retorna a primeira COM disponível (fallback)
+        if ports:
+            return ports[0].device
+            
+        return None
+
+    def connect(self, port_name=None):
+        """Conecta ao Arduino (Automaticamente ou em Porta Específica)"""
+        with self.lock:
+            if self.is_connected:
+                return True
                 
-                if port_name is None and ports:
-                    # Se não encontrou Arduino, usa a primeira porta disponível
-                    port_name = ports[0]['device']
+            port = port_name if port_name else self.find_arduino()
             
-            if port_name is None:
-                print("❌ Nenhuma porta serial disponível")
+            if not port:
+                print("Nenhum Arduino encontrado.")
+                if self.on_connection_change:
+                    self.on_connection_change(False, None)
                 return False
-            
-            # Fechar conexão anterior se existir
-            if self.serial_port and self.serial_port.is_open:
-                self.serial_port.close()
-            
-            # Abrir nova conexão
-            self.serial_port = serial.Serial(
-                port=port_name,
-                baudrate=self.baudrate,
-                timeout=self.timeout,
-                write_timeout=1.0  # Evitar travamento na escrita
-            )
-            
-            # Aguardar inicialização do Arduino
-            time.sleep(2)
-            
-            self.port_name = port_name
-            self.is_connected = True
-            
-            # Por segurança, cortar áudio ao conectar (sistema em repouso)
-            # O áudio só será liberado quando o usuário clicar em "Iniciar"
-            self.cut_audio()
-            
-            print(f"✅ Arduino conectado em {port_name}")
-            print("🔒 Áudio cortado (sistema em repouso - Fail-Safe)")
-            
-            if self.on_connection_change:
-                self.on_connection_change(True)
-            
-            return True
-            
-        except serial.SerialException as e:
-            print(f"❌ Erro ao conectar Arduino: {e}")
-            self.is_connected = False
-            
-            if self.on_connection_change:
-                self.on_connection_change(False)
-            
-            return False
+                
+            try:
+                self.serial = serial.Serial(port, 9600, timeout=1)
+                time.sleep(2) # Aguarda inicialização do Arduino (reset)
+                
+                self.port = port
+                self.is_connected = True
+                print(f"Arduino conectado em {port}")
+                
+                if self.on_connection_change:
+                    self.on_connection_change(True, port)
+                    
+                return True
+            except Exception as e:
+                print(f"Erro ao conectar Arduino em {port}: {e}")
+                self.is_connected = False
+                if self.on_connection_change:
+                    self.on_connection_change(False, None)
+                return False
     
+    def keep_alive(self):
+        """Mantém a conexão serial ativa (Envia pulso simples)"""
+        # Envia um caractere vazio (newline) apenas para manter o link ativo
+        # Isso evita que alguns arduinos entrem em idle ou que o watchdog do firmware desligue o relé
+        try:
+            with self.lock:
+                if self.is_connected and self.serial:
+                    self.serial.write(b'\n')
+        except Exception:
+            pass # Ignorar erros no keepalive para não spanar logs
+
     def disconnect(self):
         """Desconecta do Arduino"""
-        self.auto_reconnect = False
-        
-        if self.serial_port and self.serial_port.is_open:
-            # FAIL-SAFE: Liberar áudio antes de desconectar
-            # Isso garante que ao fechar o sistema, o som fique ativo
-            print("🔓 Liberando áudio (Fail-Safe - sistema desligando)...")
-            self.open_audio()
-            time.sleep(0.2)  # Aguardar comando ser processado
+        with self.lock:
+            if self.serial and self.serial.is_open:
+                self.serial.close()
             
-            self.serial_port.close()
+            self.serial = None
             self.is_connected = False
-            print(f"🔌 Arduino desconectado de {self.port_name}")
-            print("✅ Áudio liberado (Fail-Safe ativo)")
+            self.port = None
             
             if self.on_connection_change:
-                self.on_connection_change(False)
-    
-    def send_command(self, command: str) -> bool:
-        """
-        Envia comando para o Arduino
-        '1' = Abrir áudio
-        '0' = Cortar áudio
-        """
-        if not self.is_connected or not self.serial_port:
-            print("⚠️ Arduino não conectado")
-            return False
-        
-        try:
-            self.serial_port.write(command.encode())
-            self.serial_port.flush()
-            return True
-            
-        except serial.SerialException as e:
-            print(f"❌ Erro ao enviar comando: {e}")
-            self.is_connected = False
-            
-            if self.on_connection_change:
-                self.on_connection_change(False)
-            
-            # Tentar reconectar
-            if self.auto_reconnect:
-                self._start_reconnect_thread()
-            
-            return False
-    
-    def open_audio(self) -> bool:
-        """Abre o áudio (relé ativo)"""
-        success = self.send_command('1')
-        if success:
-            print("🔊 Áudio ABERTO")
-        return success
-    
-    def cut_audio(self) -> bool:
-        """Corta o áudio (relé desativo)"""
-        success = self.send_command('0')
-        if success:
-            print("🔇 Áudio CORTADO")
-        return success
-    
-    def _start_reconnect_thread(self):
-        """Inicia thread de reconexão automática"""
-        if self.reconnect_thread and self.reconnect_thread.is_alive():
-            return
-        
-        self.reconnect_thread = threading.Thread(target=self._reconnect_loop, daemon=True)
-        self.reconnect_thread.start()
-    
-    def _reconnect_loop(self):
-        """Loop de reconexão automática"""
-        print("🔄 Tentando reconectar ao Arduino...")
-        
-        while self.auto_reconnect and not self.is_connected:
-            if self.connect(self.port_name):
-                print("✅ Reconexão bem-sucedida!")
-                break
-            
-            time.sleep(3)  # Aguardar 3 segundos antes de tentar novamente
-    
-    def check_connection(self) -> bool:
-        """Verifica se a conexão está ativa"""
-        if not self.serial_port or not self.serial_port.is_open:
-            self.is_connected = False
-            return False
-        
-        try:
-            # Tentar ler status (timeout curto)
-            self.serial_port.in_waiting
-            return True
-            
-        except serial.SerialException:
-            self.is_connected = False
-            
-            if self.on_connection_change:
-                self.on_connection_change(False)
-            
-            if self.auto_reconnect:
-                self._start_reconnect_thread()
-            
-            return False
-    
-    def __del__(self):
-        """Destrutor - garante que o áudio seja LIBERADO ao encerrar (Fail-Safe)"""
-        if self.serial_port and self.serial_port.is_open:
-            self.open_audio()  # FAIL-SAFE: Liberar áudio
-            time.sleep(0.1)
-            self.serial_port.close()
+                self.on_connection_change(False, None)
 
+    def send_command(self, command):
+        """Envia um comando para o Arduino"""
+        with self.lock:
+            if not self.is_connected or not self.serial:
+                print(f"Erro: Tentativa de enviar comando '{command}' sem conexão.")
+                # Tenta reconectar automaticamente
+                if not self.connect():
+                    return False
+            
+            try:
+                # Envia comando com quebra de linha
+                cmd_str = f"{command}\n"
+                self.serial.write(cmd_str.encode('utf-8'))
+                print(f"Comando enviado Arduino: {command}")
+                return True
+            except Exception as e:
+                print(f"Erro ao enviar comando serial: {e}")
+                self.disconnect() # Assume desconexão em erro de escrita
+                return False
 
-# Exemplo de uso
-if __name__ == '__main__':
-    print("=== Teste do Controlador Arduino ===\n")
-    
-    controller = ArduinoController()
-    
-    # Listar portas disponíveis
-    print("Portas disponíveis:")
-    ports = controller.list_available_ports()
-    for i, port in enumerate(ports, 1):
-        print(f"  {i}. {port['device']} - {port['description']}")
-    
-    print()
-    
-    # Conectar
-    if controller.connect():
-        print("\n✅ Teste de conexão bem-sucedido!")
+    def open_audio(self):
+        """
+        Liberar áudio.
+        Lógica Invertida para Relé NF (Normalmente Fechado):
+        Envia '0' para DESLIGAR o relé, permitindo que o contato repouse em Fechado (Som ON).
+        """
+        self.send_command('0')
+
+    def cut_audio(self):
+        """
+        Cortar áudio.
+        Lógica Invertida para Relé NF (Normalmente Fechado):
+        Envia '1' para LIGAR o relé, abrindo o contato NF (Som OFF).
+        """
+        self.send_command('1')
+
+    def check_connection(self):
+        """Verifica se a porta ainda está acessível"""
+        if not self.port:
+            return False
         
-        # Teste de comandos
-        print("\n--- Teste de Comandos ---")
-        print("Abrindo áudio em 2 segundos...")
-        time.sleep(2)
-        controller.open_audio()
-        
-        print("Cortando áudio em 3 segundos...")
-        time.sleep(3)
-        controller.cut_audio()
-        
-        print("\n✅ Teste concluído!")
-        controller.disconnect()
-    else:
-        print("\n❌ Falha ao conectar ao Arduino")
-        print("Verifique se o Arduino está conectado e o driver está instalado.")
+        # Modo simples: tentar achar a porta na lista novamente
+        ports = [p.device for p in serial.tools.list_ports.comports()]
+        return self.port in ports
+
+    def list_available_ports(self):
+        """Retorna lista de portas COM disponíveis como dicionários"""
+        return [{'device': p.device, 'description': p.description} for p in serial.tools.list_ports.comports()]

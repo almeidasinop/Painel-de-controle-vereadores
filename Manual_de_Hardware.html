@@ -201,7 +201,8 @@
         <div class="max-w-7xl mx-auto">
             <h2 class="text-3xl font-bold text-center text-slate-800 mb-4">Guia de Compra: Componentes Específicos</h2>
             <p class="text-center text-slate-600 mb-12 max-w-2xl mx-auto">
-                Para um áudio limpo, a escolha do hardware é fundamental. Abaixo estão as especificações exatas para aquisição.
+                Para um áudio limpo, a escolha do hardware é fundamental. Abaixo estão as especificações exatas para
+                aquisição.
             </p>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -273,48 +274,95 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
 
-            <!-- Logic Connection (Table) -->
-            <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200">
-                <div class="bg-slate-800 p-4">
-                    <h3 class="text-white font-bold flex items-center">
-                        <span class="text-cyan-400 mr-2 text-xl">⚡</span>
-                        Conexão Lógica (Arduino -> Relé)
-                    </h3>
+            <div class="flex flex-col gap-8">
+                <!-- Logic Connection (Table) -->
+                <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200">
+                    <div class="bg-slate-800 p-4">
+                        <h3 class="text-white font-bold flex items-center">
+                            <span class="text-cyan-400 mr-2 text-xl">⚡</span>
+                            Conexão Lógica (Arduino -> Relé)
+                        </h3>
+                    </div>
+                    <div class="p-6">
+                        <p class="text-sm text-slate-600 mb-6">
+                            Conecte os pinos digitais do Arduino às entradas de sinal do módulo relé. Use jumpers
+                            macho-fêmea.
+                        </p>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse">
+                                <thead>
+                                    <tr class="bg-slate-50 border-b border-slate-200">
+                                        <th class="p-4 font-semibold text-slate-700">Arduino Uno/Nano</th>
+                                        <th class="p-4 font-semibold text-slate-700">Módulo Relé</th>
+                                        <th class="p-4 font-semibold text-slate-700">Função</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr>
+                                        <td class="p-4 font-mono text-red-600 font-bold">5V</td>
+                                        <td class="p-4 font-mono">VCC</td>
+                                        <td class="p-4 text-sm">Alimentação Positiva</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="p-4 font-mono text-slate-900 font-bold">GND</td>
+                                        <td class="p-4 font-mono">GND</td>
+                                        <td class="p-4 text-sm">Terra (Comum)</td>
+                                    </tr>
+                                    <tr class="bg-yellow-50">
+                                        <td class="p-4 font-mono text-blue-600 font-bold">Pino 7</td>
+                                        <td class="p-4 font-mono">IN1</td>
+                                        <td class="p-4 text-sm font-medium">Controle Mic 1</td>
+                                    </tr>
+                                    <tr class="bg-green-50">
+                                        <td class="p-4 font-mono text-blue-600 font-bold">Pino 8</td>
+                                        <td class="p-4 font-mono">IN2</td>
+                                        <td class="p-4 text-sm font-medium">Controle Mic 2</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
-                <div class="p-6">
-                    <p class="text-sm text-slate-600 mb-6">
-                        Conecte os pinos digitais do Arduino às entradas de sinal do módulo relé. Use jumpers
-                        macho-fêmea.
-                    </p>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left border-collapse">
-                            <thead>
-                                <tr class="bg-slate-50 border-b border-slate-200">
-                                    <th class="p-4 font-semibold text-slate-700">Arduino Uno/Nano</th>
-                                    <th class="p-4 font-semibold text-slate-700">Módulo Relé</th>
-                                    <th class="p-4 font-semibold text-slate-700">Função</th>
+
+                <!-- NEW: Audio Fail-Safe Wiring -->
+                <div class="bg-white rounded-xl shadow-lg border-l-4 border-emerald-500 overflow-hidden">
+                    <div class="bg-emerald-900 p-4">
+                        <h3 class="text-white font-bold flex items-center">
+                            <span class="text-emerald-400 mr-2 text-xl">🔊</span>
+                            Saída de Áudio (Fail-Safe)
+                        </h3>
+                    </div>
+                    <div class="p-6">
+                        <p class="text-sm text-slate-600 mb-4">
+                            <b>Importante:</b> Utilize o contato <b>Normalmente Fechado (NC)</b>. Isso garante que o
+                            microfone funcione (fio fechado) mesmo se o sistema perder energia.
+                        </p>
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead class="bg-slate-50">
+                                <tr>
+                                    <th class="p-3 border-b">Terminal Relé</th>
+                                    <th class="p-3 border-b">Conexão</th>
+                                    <th class="p-3 border-b">Estado Repouso (Desligado)</th>
                                 </tr>
                             </thead>
-                            <tbody class="divide-y divide-slate-100">
+                            <tbody>
                                 <tr>
-                                    <td class="p-4 font-mono text-red-600 font-bold">5V</td>
-                                    <td class="p-4 font-mono">VCC</td>
-                                    <td class="p-4 text-sm">Alimentação Positiva</td>
+                                    <td class="p-3 font-mono font-bold text-slate-700">COM</td>
+                                    <td class="p-3">Entrada de Sinal (+)</td>
+                                    <td class="p-3" rowspan="2">
+                                        <span
+                                            class="bg-green-100 text-green-800 px-2 py-1 rounded-full text-xs font-bold border border-green-200">CONECTADO
+                                            (Som Passa)</span>
+                                    </td>
                                 </tr>
                                 <tr>
-                                    <td class="p-4 font-mono text-slate-900 font-bold">GND</td>
-                                    <td class="p-4 font-mono">GND</td>
-                                    <td class="p-4 text-sm">Terra (Comum)</td>
+                                    <td class="p-3 font-mono font-bold text-emerald-600">CN (NC/NF)</td>
+                                    <td class="p-3">Saída para Mesa (+)</td>
                                 </tr>
-                                <tr class="bg-yellow-50">
-                                    <td class="p-4 font-mono text-blue-600 font-bold">Pino 7</td>
-                                    <td class="p-4 font-mono">IN1</td>
-                                    <td class="p-4 text-sm font-medium">Controle Mic 1</td>
-                                </tr>
-                                <tr class="bg-green-50">
-                                    <td class="p-4 font-mono text-blue-600 font-bold">Pino 8</td>
-                                    <td class="p-4 font-mono">IN2</td>
-                                    <td class="p-4 text-sm font-medium">Controle Mic 2</td>
+                                <tr class="text-slate-400 opacity-50">
+                                    <td class="p-3 font-mono">NO (NA)</td>
+                                    <td class="p-3 italic">-- Não usar --</td>
+                                    <td class="p-3 text-xs">Aberto (Sem som)</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -337,7 +385,8 @@
 
                     <!-- CSS DRAWING OF RELAY -->
                     <div class="relay-box mb-8">
-                        <div class="absolute top-2 left-2 text-white/50 text-xs font-mono uppercase tracking-tighter">Vista Bornes Azuis</div>
+                        <div class="absolute top-2 left-2 text-white/50 text-xs font-mono uppercase tracking-tighter">
+                            Vista Bornes Azuis</div>
 
                         <!-- Terminals -->
                         <div class="relay-terminal term-no bg-slate-300 text-slate-500">NO</div>
@@ -365,17 +414,125 @@
 
                         <!-- Capacitor Body -->
                         <div class="capacitor-body shadow-lg border border-amber-600">104</div>
-                        <div class="absolute top-[65px] left-1/2 -translate-x-1/2 text-[10px] text-amber-200 font-mono font-bold">
+                        <div
+                            class="absolute top-[65px] left-1/2 -translate-x-1/2 text-[10px] text-amber-200 font-mono font-bold">
                             SUPRESSOR</div>
 
                     </div>
                     <div class="text-center text-xs text-slate-500 max-w-xs mx-auto italic">
-                        O capacitor cerâmico 104 não tem polaridade. Ele atua filtrando o pico de alta frequência gerado pela centelha mecânica do relé.
+                        O capacitor cerâmico 104 não tem polaridade. Ele atua filtrando o pico de alta frequência gerado
+                        pela centelha mecânica do relé.
                     </div>
                 </div>
             </div>
 
         </div>
+
+        <!-- XLR WIRING ASSEMBLY GUIDE -->
+        <div class="mt-12 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden">
+            <div class="bg-indigo-900 p-6">
+                <h3 class="text-white text-xl font-bold flex items-center">
+                    <span class="mr-3 text-2xl">🎤</span> Montagem Prática: Cabo XLR com Interrupção (Fail-Safe)
+                </h3>
+            </div>
+
+            <div class="p-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
+
+                    <!-- Left: Pinout & Concepts -->
+                    <div>
+                        <h4 class="text-lg font-bold text-slate-800 mb-4 border-b pb-2">1. Entendendo a Pinagem XLR</h4>
+                        <p class="text-slate-600 mb-4 text-sm">
+                            Identifique os números gravados no plástico interno dos conectores antes de soldar.
+                        </p>
+
+                        <div class="flex justify-between gap-4 mb-8">
+                            <div class="flex-1 bg-slate-50 border border-slate-200 p-4 rounded text-center">
+                                <div class="text-2xl font-black text-slate-300 mb-1">1</div>
+                                <div class="font-bold text-slate-700">Terra (Shield)</div>
+                                <div class="text-xs text-green-600 font-bold mt-2 uppercase">Passagem Direta</div>
+                            </div>
+                            <div
+                                class="flex-1 bg-red-50 border border-red-100 p-4 rounded text-center relative overflow-hidden">
+                                <div
+                                    class="absolute top-0 right-0 bg-red-500 text-white text-[10px] px-2 py-0.5 font-bold">
+                                    CORTE</div>
+                                <div class="text-2xl font-black text-red-200 mb-1">2</div>
+                                <div class="font-bold text-red-700">Sinal (+) Hot</div>
+                                <div class="text-xs text-red-600 font-bold mt-2 uppercase">Vai p/ Relé</div>
+                            </div>
+                            <div class="flex-1 bg-slate-50 border border-slate-200 p-4 rounded text-center">
+                                <div class="text-2xl font-black text-slate-300 mb-1">3</div>
+                                <div class="font-bold text-slate-700">Sinal (-) Cold</div>
+                                <div class="text-xs text-green-600 font-bold mt-2 uppercase">Passagem Direta</div>
+                            </div>
+                        </div>
+
+                        <div class="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
+                            <h5 class="text-indigo-900 font-bold mb-2 flex items-center">
+                                <span class="text-lg mr-2">💡</span> Conceito Fail-Safe
+                            </h5>
+                            <p class="text-sm text-indigo-800 leading-relaxed">
+                                Usamos o terminal <b>NC (Normalmente Fechado)</b>. Isso significa que, sem energia, o
+                                relé fecha o contato e deixa o som passar. Se o sistema travar ou desligar, você <b>não
+                                    perde o áudio</b>. O comando de "Corte" ativa o relé para *abrir* o circuito.
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Right: Step-by-Step -->
+                    <div>
+                        <h4 class="text-lg font-bold text-slate-800 mb-4 border-b pb-2">2. Instruções de Soldagem</h4>
+
+                        <ol class="space-y-6 relative border-l-2 border-slate-200 ml-3 pl-8">
+                            <li class="relative">
+                                <span
+                                    class="absolute -left-[41px] bg-white border-2 border-slate-300 w-8 h-8 rounded-full flex items-center justify-center font-bold text-slate-500">A</span>
+                                <strong class="block text-slate-800 mb-1">Fios Diretos (Bypass)</strong>
+                                <p class="text-sm text-slate-600">
+                                    Solde um cabo direto do <b>Pino 1</b> (Entrada) ao <b>Pino 1</b> (Saída).<br>
+                                    Faça o mesmo para o <b>Pino 3</b> (Entrada) ao <b>Pino 3</b> (Saída).<br>
+                                    <em class="text-xs text-slate-400">Estes fios não tocam no relé.</em>
+                                </p>
+                            </li>
+
+                            <li class="relative">
+                                <span
+                                    class="absolute -left-[41px] bg-red-500 border-2 border-red-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold shadow-sm">B</span>
+                                <strong class="block text-slate-800 mb-1">O Corte (Pino 2)</strong>
+                                <p class="text-sm text-slate-600 mb-3">
+                                    O fio do Pino 2 deve ser seccionado (cortado) e desviado para o relé:
+                                </p>
+                                <div class="bg-slate-800 rounded-lg p-4 text-sm font-mono text-slate-300 shadow-inner">
+                                    <div class="flex justify-between items-center mb-2">
+                                        <span>XLR Entrada (Pino 2)</span>
+                                        <span class="text-yellow-400">───🡢</span>
+                                        <span class="text-white font-bold bg-blue-600 px-2 rounded">COM (Centro)</span>
+                                    </div>
+                                    <div class="flex justify-between items-center mb-2">
+                                        <span>XLR Saída (Pino 2)</span>
+                                        <span class="text-yellow-400">🡠───</span>
+                                        <span class="text-white font-bold bg-blue-600 px-2 rounded">NC (Fechado)</span>
+                                    </div>
+                                    <div class="flex justify-between items-center opacity-50">
+                                        <span>Terminal NO (Aberto)</span>
+                                        <span>.......</span>
+                                        <span
+                                            class="text-red-400 font-bold border border-red-900 px-2 rounded">VAZIO</span>
+                                    </div>
+                                </div>
+                            </li>
+                        </ol>
+
+                        <div class="mt-6 text-xs text-slate-500 bg-slate-100 p-3 rounded border border-slate-200">
+                            <strong>Dica Pro:</strong> Mantenha os fios do relé o mais curtos possível para evitar
+                            zumbidos (hum) de rede elétrica, já que o Pino 2 carrega o sinal vivo balanceado.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </section>
 
     <!-- NOISE REDUCTION ANALYSIS -->
@@ -385,15 +542,17 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                 <div>
                     <p class="text-slate-600 mb-4 text-lg">
-                        O capacitor cerâmico de 100nF (104) é escolhido por sua alta velocidade de resposta. 
+                        O capacitor cerâmico de 100nF (104) é escolhido por sua alta velocidade de resposta.
                     </p>
                     <p class="text-slate-600 mb-4">
-                        Ele atua drenando a energia transiente que saltaria entre os contatos COM e NC no momento da abertura, garantindo que o som seja cortado de forma "suave" eletricamente.
+                        Ele atua drenando a energia transiente que saltaria entre os contatos COM e NC no momento da
+                        abertura, garantindo que o som seja cortado de forma "suave" eletricamente.
                     </p>
                     <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
                         <h4 class="font-bold text-blue-800 mb-1">Por que Cerâmico?</h4>
                         <p class="text-sm text-blue-900">
-                            Capacitores eletrolíticos não servem aqui por serem polarizados e mais lentos. O cerâmico tipo "disco" ou "multicamada" é o padrão industrial para filtros de ruído.
+                            Capacitores eletrolíticos não servem aqui por serem polarizados e mais lentos. O cerâmico
+                            tipo "disco" ou "multicamada" é o padrão industrial para filtros de ruído.
                         </p>
                     </div>
                 </div>
@@ -418,7 +577,8 @@
                     Componentes comuns encontrados em lojas de eletrônica.
                 </p>
                 <div class="bg-slate-100 p-3 rounded text-xs text-slate-700">
-                    <strong>Sugestão:</strong> Procure kits de "Iniciante Arduino". O capacitor 104 costuma vir em conjuntos de resistores/capacitores.
+                    <strong>Sugestão:</strong> Procure kits de "Iniciante Arduino". O capacitor 104 costuma vir em
+                    conjuntos de resistores/capacitores.
                 </div>
             </div>
 
@@ -431,7 +591,8 @@
                     O Arduino pode falhar se a porta USB não fornecer corrente suficiente para os dois relés.
                 </p>
                 <div class="bg-slate-100 p-3 rounded text-xs text-slate-700">
-                    <strong>Solução:</strong> Utilize uma fonte de 5V 2A externa (tipo carregador de celular) conectada ao Arduino via USB para maior torque mecânico nos relés.
+                    <strong>Solução:</strong> Utilize uma fonte de 5V 2A externa (tipo carregador de celular) conectada
+                    ao Arduino via USB para maior torque mecânico nos relés.
                 </div>
             </div>
 
@@ -444,7 +605,8 @@
                     Ruídos externos podem ser captados pelos fios soltos.
                 </p>
                 <div class="bg-slate-100 p-3 rounded text-xs text-slate-700">
-                    <strong>Solução:</strong> Acomode tudo em uma <b>Caixa Patola</b>. O plástico isola os contatos elétricos e evita curto-circuitos acidentais na tribuna.
+                    <strong>Solução:</strong> Acomode tudo em uma <b>Caixa Patola</b>. O plástico isola os contatos
+                    elétricos e evita curto-circuitos acidentais na tribuna.
                 </div>
             </div>
         </div>
@@ -541,9 +703,9 @@
                     label: 'Pico de Ruído (Conceitual)',
                     data: [90, 20, 5],
                     backgroundColor: [
-                        '#EF4444', 
-                        '#F59E0B', 
-                        '#10B981'  
+                        '#EF4444',
+                        '#F59E0B',
+                        '#10B981'
                     ],
                     borderRadius: 6,
                     barThickness: 40

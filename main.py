@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QLineEdit,
     QSpinBox, QGroupBox, QGridLayout, QMessageBox, QComboBox,
-    QFrame, QSizePolicy
+    QFrame, QSizePolicy, QStackedWidget
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QFont, QIcon, QPalette, QColor, QPixmap
@@ -25,6 +25,12 @@ import urllib.error
 import threading
 import server
 import multiprocessing
+import logger_setup
+from session_config import SessionConfig
+
+# Inicializar LOG
+# Deve ser chamado antes de qlqr outra coisa
+logger_setup.setup_logger("painel")
 
 def api_post(endpoint, data):
     """Envia comando HTTP POST para o servidor Flask em background"""
@@ -50,12 +56,24 @@ class ArduinoConnectionThread(QThread):
     """Thread para conectar ao Arduino sem travar a GUI"""
     finished = Signal(bool)
     
-    def __init__(self, arduino_controller):
+    def __init__(self, arduino_controller, preferred_port=None):
         super().__init__()
         self.arduino = arduino_controller
+        self.preferred_port = preferred_port
         
     def run(self):
-        connected = self.arduino.connect()
+        connected = False
+        # Tentar porta preferida primeiro
+        if self.preferred_port:
+             print(f"DEBUG: Tentando conectar Arduino na porta salva: {self.preferred_port}")
+             connected = self.arduino.connect(self.preferred_port)
+        
+        # Se falhou ou não tinha preferida, auto-discovery
+        if not connected:
+            if self.preferred_port:
+                print("DEBUG: Conexão na porta salva falhou. Tentando auto-conexão...")
+            connected = self.arduino.connect()
+            
         self.finished.emit(connected)
 
 class PainelPresidente(QMainWindow):
@@ -77,6 +95,7 @@ class PainelPresidente(QMainWindow):
         
         # Estado Aparte
         self.is_active_aparte = False
+        self.is_parte_mode = False # CORREÇÃO: Atributo faltante causava crash!
         self.live_vereador = None  # Quem está realmente falando (na tela)
         self.main_speaker = None   # Orador principal (se houver aparte)
         self.aparte_speaker = None # Quem pediu aparte
@@ -97,8 +116,16 @@ class PainelPresidente(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_timer)
         
+        # Configuração da Sessão
+        self.session_config = SessionConfig()
+        
         # Configurar UI primeiro
         self.init_ui()
+        
+        # Timer de verificação de conexão e Keep-Alive
+        self.connection_timer = QTimer()
+        self.connection_timer.timeout.connect(self.check_connections)
+        self.connection_timer.start(2000) # Checar a cada 2 segundos (previne timeout de 5s do Arduino)
         
 
     
@@ -115,7 +142,11 @@ class PainelPresidente(QMainWindow):
         
         # Iniciar conexão com Arduino em Thread separada
         print("DEBUG: Iniciando thread de conexão Arduino...")
-        self.arduino_worker = ArduinoConnectionThread(self.arduino)
+        
+        # Recuperar última porta usada
+        last_port = self.session_config.get_arduino_port()
+        
+        self.arduino_worker = ArduinoConnectionThread(self.arduino, preferred_port=last_port)
         self.arduino_worker.finished.connect(self.on_arduino_connection_finished)
         self.arduino_worker.start()
         
@@ -130,6 +161,12 @@ class PainelPresidente(QMainWindow):
     def on_arduino_connection_finished(self, connected):
         """Chamado quando a thread de conexão do Arduino termina"""
         print(f"DEBUG: Conexão Arduino finalizada. Conectado: {connected}")
+        self.update_arduino_status(connected)
+        
+        if connected:
+            # Forçar corte de áudio inicial (Inicia sistema -> silêncio)
+            # Necessário para lógica NF onde repouso = com som
+            self.arduino.cut_audio()
 
 
 
@@ -139,6 +176,10 @@ class PainelPresidente(QMainWindow):
         """Inicializar interface do usuário"""
         self.setWindowTitle("Painel do Presidente - Controle de Tribuna")
         self.setMinimumSize(1400, 800)
+        
+        # Icone da Janela
+        if os.path.exists(os.path.join(os.path.dirname(__file__), "fotos", "logo.png")):
+             self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "fotos", "logo.png")))
         
         # Widget central
         central_widget = QWidget()
@@ -334,7 +375,7 @@ class PainelPresidente(QMainWindow):
         
         # Botão de Aparte (Movido para cá)
         self.btn_aparte = QPushButton("🗣️ CONCEDER APARTE")
-        self.btn_aparte.clicked.connect(self.toggle_aparte)
+        self.btn_aparte.clicked.connect(self.conceder_aparte)
         self.btn_aparte.setMinimumHeight(60)
         self.btn_aparte.setStyleSheet("""
             QPushButton {
@@ -350,16 +391,15 @@ class PainelPresidente(QMainWindow):
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #d35400, stop:1 #e67e22);
             }
-            QPushButton:checked {
+            QPushButton:pressed {
                  background: #c0392b;
-                 border: 2px solid #e74c3c;
             }
             QPushButton:disabled {
                 background: rgba(255, 255, 255, 0.05);
                 color: #666;
             }
         """)
-        self.btn_aparte.setCheckable(True)
+        self.btn_aparte.setCheckable(False)
         self.btn_aparte.setEnabled(False) # Habilitado apenas ao selecionar orador
         controls_layout.addWidget(self.btn_aparte)
         
@@ -422,9 +462,154 @@ class PainelPresidente(QMainWindow):
         layout.addWidget(self.btn_admin)
         
         layout.addStretch()
+        layout.addWidget(self.btn_admin)
+        
+        layout.addStretch()
         group.setLayout(layout)
         return group
+
+
+    def create_status_section(self):
+        """Criar indicadores de status de conexão"""
+        container = QFrame()
+        container.setStyleSheet("background: transparent; border: none;")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(10)
+        
+        # Arduino Status
+        self.arduino_status_label = QLabel("❌ Arduino: Desconectado")
+        self.arduino_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.arduino_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #ffffff;
+                background-color: rgba(250, 112, 154, 0.4);
+                border: 1px solid #fa709a;
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self.arduino_status_label)
+        
+        # Server Status
+        self.server_status_label = QLabel("❌ Servidor: Desconectado")
+        self.server_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.server_status_label.setStyleSheet("""
+            QLabel {
+                font-size: 14px;
+                font-weight: bold;
+                color: #ffffff;
+                background-color: rgba(250, 112, 154, 0.4);
+                border: 1px solid #fa709a;
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        layout.addWidget(self.server_status_label)
+        
+        container.setLayout(layout)
+        return container
+
     
+        group.setLayout(layout)
+        return group
+
+    def create_speaker_section_content(self, parent_layout):
+        """Helper para criar a área de orador (Modo Normal e Aparte)"""
+        # Criar Stacked Widget para alternar layouts
+        self.speaker_stack = QStackedWidget()
+        
+        # --- PÁGINA 0: MODO NORMAL ---
+        page_normal = QWidget()
+        layout_normal = QVBoxLayout()
+        
+        self.normal_photo = QLabel("👤")
+        self.normal_photo.setFixedSize(140, 140)
+        self.normal_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.normal_photo.setStyleSheet("""
+            QLabel {
+                border: 3px solid rgba(102, 126, 234, 0.5);
+                border-radius: 70px; /* Redondo */
+                background: rgba(255, 255, 255, 0.05);
+            }
+        """)
+        
+        self.normal_label = QLabel("Selecione um Vereador")
+        self.normal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.normal_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
+        
+        layout_normal.addWidget(self.normal_photo, 0, Qt.AlignmentFlag.AlignCenter)
+        layout_normal.addWidget(self.normal_label)
+        page_normal.setLayout(layout_normal)
+        self.speaker_stack.addWidget(page_normal)
+        
+        # --- PÁGINA 1: MODO APARTE (A -> B) ---
+        page_aparte = QWidget()
+        layout_aparte = QHBoxLayout() # Horizontal
+        layout_aparte.setSpacing(20) # Espaço entre elementos
+        
+        # 1. Concedente (Esquerda)
+        layout_concedente = QVBoxLayout()
+        self.aparte_concedente_photo = QLabel("👤")
+        self.aparte_concedente_photo.setFixedSize(120, 120)
+        self.aparte_concedente_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.aparte_concedente_photo.setStyleSheet("border-radius: 10px; border: 2px solid #888; background: rgba(255,255,255,0.05);")
+        
+        self.aparte_concedente_label = QLabel("Orador Original")
+        self.aparte_concedente_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.aparte_concedente_label.setStyleSheet("font-size: 14px; color: #fff; font-weight: bold; margin-top: 5px;")
+        
+        layout_concedente.addWidget(self.aparte_concedente_photo, 0, Qt.AlignmentFlag.AlignCenter)
+        layout_concedente.addWidget(self.aparte_concedente_label)
+        
+        # 2. Texto Central
+        lbl_info = QLabel("concede aparte para")
+        lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_info.setStyleSheet("color: #fff; font-size: 18px; font-weight: normal; margin: 0 10px;")
+        
+        # 3. Receptor (Direita - Com moldura de destaque)
+        frame_receptor = QFrame()
+        frame_receptor.setStyleSheet("""
+            QFrame {
+                border: 2px solid #f39c12; 
+                border-radius: 10px;
+                /* Background removido temporariamente para teste visual limpo se desejar, mas mantendo conforme pedido anterior */
+                background-color: transparent; 
+            }
+        """)
+        layout_receptor = QVBoxLayout(frame_receptor)
+        layout_receptor.setContentsMargins(15, 15, 15, 15)
+        
+        self.aparte_receptor_photo = QLabel("👤")
+        self.aparte_receptor_photo.setFixedSize(120, 120)
+        self.aparte_receptor_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.aparte_receptor_photo.setStyleSheet("border: none; background: transparent;") # Borda já está no frame
+        
+        self.aparte_receptor_label = QLabel("Novo Orador")
+        self.aparte_receptor_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.aparte_receptor_label.setStyleSheet("font-size: 14px; font-weight: bold; color: white; border: none; margin-top: 5px;")
+        
+        layout_receptor.addWidget(self.aparte_receptor_photo, 0, Qt.AlignmentFlag.AlignCenter)
+        layout_receptor.addWidget(self.aparte_receptor_label)
+        
+        # Montar layout final
+        layout_aparte.addLayout(layout_concedente)
+        layout_aparte.addWidget(lbl_info)
+        layout_aparte.addWidget(frame_receptor)
+        
+        page_aparte.setLayout(layout_aparte)
+        self.speaker_stack.addWidget(page_aparte)
+        
+        # Wrap em GroupBox
+        current_group = QGroupBox("🎤 Orador em Tribuna")
+        container_layout = QVBoxLayout()
+        container_layout.addWidget(self.speaker_stack)
+        current_group.setLayout(container_layout)
+        
+        parent_layout.addWidget(current_group)
+
     def create_vereadores_section(self):
         """Criar seção de vereadores"""
         group = QGroupBox("👥 Vereadores")
@@ -477,45 +662,12 @@ class PainelPresidente(QMainWindow):
                 border: 2px solid #00f2fe;
             }
         """)
-        layout.addWidget(self.vereadores_list)
         
-        # Orador atual
-        current_group = QGroupBox("🎤 Orador Atual")
-        current_layout = QVBoxLayout()
+        # Lista (Stretch acima de 0 para expandir e ocupar espaço)
+        layout.addWidget(self.vereadores_list, 1)
         
-        # Foto do orador atual
-        self.current_speaker_photo = QLabel()
-        self.current_speaker_photo.setFixedSize(120, 120)
-        self.current_speaker_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.current_speaker_photo.setStyleSheet("""
-            QLabel {
-                border: 3px solid rgba(102, 126, 234, 0.5);
-                border-radius: 10px;
-                background: rgba(255, 255, 255, 0.05);
-            }
-        """)
-        self.current_speaker_photo.setText("👤")
-        current_layout.addWidget(self.current_speaker_photo, 0, Qt.AlignmentFlag.AlignCenter)
-        
-        self.current_speaker_label = QLabel("Nenhum vereador selecionado")
-        self.current_speaker_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.current_speaker_label.setStyleSheet("""
-            QLabel {
-                font-size: 18px;
-                font-weight: bold;
-                color: #ffffff;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(102, 126, 234, 0.2),
-                    stop:1 rgba(118, 75, 162, 0.2));
-                border-radius: 10px;
-                padding: 20px;
-                margin: 10px;
-            }
-        """)
-        current_layout.addWidget(self.current_speaker_label)
-        
-        current_group.setLayout(current_layout)
-        layout.addWidget(current_group)
+        # Usar o novo helper para criar a seção do orador (Stretch 0 para tamanho fixo)
+        self.create_speaker_section_content(layout)
         
         group.setLayout(layout)
         return group
@@ -660,6 +812,27 @@ class PainelPresidente(QMainWindow):
                 item.setSizeHint(QPixmap(140, 160).size())
                 
                 self.vereadores_list.addItem(item)
+
+    def sync_list_selection(self):
+        """Sincronizar seleção da lista com o selected_vereador atual"""
+        if not self.selected_vereador:
+            return
+            
+        nome_alvo = self.selected_vereador.get('nome')
+        
+        # Bloquear sinais para não disparar select_vereador de novo (loop)
+        self.vereadores_list.blockSignals(True)
+        
+        try:
+            for i in range(self.vereadores_list.count()):
+                item = self.vereadores_list.item(i)
+                data = item.data(Qt.ItemDataRole.UserRole)
+                if data and data.get('nome') == nome_alvo:
+                    self.vereadores_list.setCurrentItem(item)
+                    self.vereadores_list.scrollToItem(item)
+                    break
+        finally:
+            self.vereadores_list.blockSignals(False)
     
     def filter_vereadores(self):
         """Filtrar vereadores"""
@@ -669,32 +842,13 @@ class PainelPresidente(QMainWindow):
     def select_vereador(self, item):
         """Selecionar vereador"""
         self.selected_vereador = item.data(Qt.ItemDataRole.UserRole)
-        nome = self.selected_vereador['nome']
-        partido = self.selected_vereador['partido']
         
-        self.current_speaker_label.setText(f"{nome}\n{partido}")
-        
-        # Carregar foto do vereador
-        if self.selected_vereador.get('foto'):
-            foto_path = os.path.join(os.path.dirname(__file__), self.selected_vereador['foto'])
-            if os.path.exists(foto_path):
-                pixmap = QPixmap(foto_path)
-                self.current_speaker_photo.setPixmap(
-                    pixmap.scaled(120, 120, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                )
-                self.current_speaker_photo.setStyleSheet("""
-                    QLabel {
-                        border: 3px solid rgba(102, 126, 234, 0.5);
-                        border-radius: 10px;
-                    }
-                """)
-            else:
-                self.current_speaker_photo.setText("👤")
-        else:
-            self.current_speaker_photo.setText("👤")
+        # Se não estiver em modo aparte, atualizar painel normal
+        if not getattr(self, 'is_parte_mode', False):
+            self.update_speaker_panel()
             
-        # Habilitar botão de aparte apenas quando iniciar a fala
-        self.btn_aparte.setEnabled(False)
+        # Habilitar botão de aparte
+        self.update_aparte_button_state()
         
         # Enviar para Servidor (API)
         api_post('speaker', {'speaker': self.selected_vereador})
@@ -704,6 +858,76 @@ class PainelPresidente(QMainWindow):
         if not self.is_running:
              self.live_vereador = self.selected_vereador
              self.sync_tela_plenario()
+
+    def update_speaker_panel(self):
+        """Atualiza a UI do orador com base no modo (Normal ou Aparte)"""
+        # Verifica se está em modo aparte
+        is_aparte = getattr(self, 'is_parte_mode', False)
+        
+        if is_aparte and hasattr(self, 'concedente') and hasattr(self, 'receptor'):
+            print("DEBUG: update_speaker_panel em MODO APARTE (Index 1)")
+            # --- MODO APARTE (Página 1) ---
+            self.speaker_stack.setCurrentIndex(1)
+            
+            # Atualizar Concedente
+            c_nome = self.concedente.get('nome', '---')
+            self.aparte_concedente_label.setText(f"{c_nome}\n(Concedente)")
+            self._load_photo_into(self.concedente.get('foto'), self.aparte_concedente_photo)
+            
+            # Atualizar Receptor
+            r_nome = self.receptor.get('nome', '---')
+            r_partido = self.receptor.get('partido', '')
+            self.aparte_receptor_label.setText(f"{r_nome}\n{r_partido}")
+            self._load_photo_into(self.receptor.get('foto'), self.aparte_receptor_photo)
+            
+        else:
+            print("DEBUG: update_speaker_panel em MODO NORMAL (Index 0)")
+            # --- MODO NORMAL (Página 0) ---
+            self.speaker_stack.setCurrentIndex(0)
+            
+            if self.selected_vereador:
+                nome = self.selected_vereador['nome']
+                partido = self.selected_vereador['partido']
+                self.normal_label.setText(f"{nome}\n{partido}")
+                self._load_photo_into(self.selected_vereador.get('foto'), self.normal_photo)
+            else:
+                self.normal_label.setText("Selecione um Vereador")
+                self.normal_photo.setText("👤")
+
+    def _load_photo_into(self, path, label_widget):
+        """Helper para carregar foto em label"""
+        if path:
+            foto_path = os.path.join(os.path.dirname(__file__), path)
+            if os.path.exists(foto_path):
+                pixmap = QPixmap(foto_path)
+                # Escalar para o tamanho do widget
+                w = label_widget.width()
+                h = label_widget.height()
+                label_widget.setPixmap(pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                return
+        label_widget.setText("👤") # Fallback
+    
+    def update_aparte_button_state(self):
+        """Atualizar estado do botão de aparte com base na lógica de orador"""
+        if self.is_parte_mode:
+            # MODO ENCERRAR
+            self.btn_aparte.setText("🛑 ENCERRAR APARTE")
+            self.btn_aparte.setEnabled(True)
+            self.btn_aparte.setStyleSheet("background-color: #c0392b; color: white; font-weight: bold; font-size: 14px;")
+        elif self.is_running and self.selected_vereador and self.live_vereador:
+            # Só permite aparte se o selecionado for diferente do que está falando ao vivo
+            if self.selected_vereador['nome'] != self.live_vereador['nome']:
+                self.btn_aparte.setText("🗣️ CONCEDER APARTE")
+                self.btn_aparte.setEnabled(True)
+                self.btn_aparte.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold; font-size: 14px;")
+            else:
+                self.btn_aparte.setText("🗣️ CONCEDER APARTE")
+                self.btn_aparte.setEnabled(False)
+                self.btn_aparte.setStyleSheet("background-color: #3e3e3e; color: #888; font-weight: bold; font-size: 14px;")
+        else:
+            self.btn_aparte.setText("🗣️ CONCEDER APARTE")
+            self.btn_aparte.setEnabled(False)
+            self.btn_aparte.setStyleSheet("background-color: #3e3e3e; color: #888; font-weight: bold; font-size: 14px;")
     
     def set_time(self, seconds):
         """Definir tempo"""
@@ -725,15 +949,20 @@ class PainelPresidente(QMainWindow):
         
     def add_time(self):
         """Adicionar tempo ao cronômetro"""
-        minutes = self.adjust_minutes.value()
-        seconds_to_add = minutes * 60
+        # Usar o tempo preparado (staged) ou padrão 1 min
+        seconds_to_use = self.staged_seconds if self.staged_seconds > 0 else 60
+        minutes = seconds_to_use // 60
         
-        self.remaining_seconds += seconds_to_add
+        self.remaining_seconds += seconds_to_use
         self.update_display()
         
         # Se não estiver rodando, também atualiza o total para consistência visual
         if not self.is_running:
             self.total_seconds = self.remaining_seconds
+        else:
+             # Se estiver rodando, aumenta o total para manter a barra de progresso coerente?
+             # Normalmente adiciona-se ao tempo extra.
+             self.total_seconds += seconds_to_use
             
         self.sync_tela_plenario()
         
@@ -743,10 +972,11 @@ class PainelPresidente(QMainWindow):
 
     def sub_time(self):
         """Remover tempo do cronômetro"""
-        minutes = self.adjust_minutes.value()
-        seconds_to_sub = minutes * 60
+        # Usar o tempo preparado (staged) ou padrão 1 min
+        seconds_to_use = self.staged_seconds if self.staged_seconds > 0 else 60
+        minutes = seconds_to_use // 60
         
-        self.remaining_seconds -= seconds_to_sub
+        self.remaining_seconds -= seconds_to_use
         if self.remaining_seconds < 0:
             self.remaining_seconds = 0
             
@@ -809,14 +1039,19 @@ class PainelPresidente(QMainWindow):
         self.play_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
         self.stop_btn.setEnabled(True)
-        self.btn_aparte.setEnabled(True)
+        
+        # Atualizar estado do botão de aparte
+        self.update_aparte_button_state()
         
         # Enviar para Servidor (API)
         api_post('timer', {'action': 'start', 'remaining': self.remaining_seconds, 'total': self.total_seconds})
         
         # Sincronizar com tela do plenário
+        # FORÇAR VISUAL DE ORADOR AGORA (Garante transição imediata)
+        if self.tela_plenario:
+            self.tela_plenario.show_vereador_info()
+            
         self.sync_tela_plenario()
-        print("DEBUG: start_timer finalizado")
     
     def show_warning(self, title, message):
         """Mostrar aviso customizado com estilo"""
@@ -852,6 +1087,123 @@ class PainelPresidente(QMainWindow):
             }
         """)
         msg.exec()
+
+    def conceder_aparte(self):
+        """Conceder aparte para o vereador selecionado"""
+        # Se já estiver em modo aparte, o botão serve para ENCERRAR
+        if self.is_parte_mode:
+            self.encerrar_aparte()
+            return
+
+        if not self.selected_vereador:
+            return
+            
+        # Lógica de Modo Aparte
+        # O orador que estava falando (live_vereador) vira o concedente
+        # O selecionado (selected_vereador) vira o receptor
+        
+        if not self.live_vereador:
+             self.live_vereador = self.selected_vereador # Fallback
+             
+        self.is_parte_mode = True
+        self.concedente = self.live_vereador
+        self.receptor = self.selected_vereador
+        
+        # Salvar tempo do orador principal para restaurar depois
+        self.saved_main_seconds = self.remaining_seconds
+        self.saved_main_total = self.total_seconds
+        
+        # Aparte visual
+        self.update_speaker_panel()
+        
+        # Parar temporariamente (reseta is_parte_mode no stop, então restauramos)
+        self._stop_timer_internal(reset_ui=False) 
+        self.is_parte_mode = True 
+        
+        print(f"DEBUG: Modo Aparte ativado. Concedente: {self.concedente.get('nome')} -> Receptor: {self.receptor.get('nome')}")
+        self.update_speaker_panel()
+
+        # Configurar tempo de aparte (Limitado ao tempo do orador principal)
+        tempo_aparte_padrao = 2 * 60 
+        
+        # Se o orador tiver menos tempo que o aparte padrão, limitar
+        if self.saved_main_seconds > 0 and tempo_aparte_padrao > self.saved_main_seconds:
+            tempo_aparte = self.saved_main_seconds
+        else:
+            tempo_aparte = tempo_aparte_padrao
+            
+        self.aparte_total_seconds = tempo_aparte # Salvar para cálculo de desconto
+        self.set_time(tempo_aparte)
+        
+        # Atualizar live_vereador para o receptor (já que ele vai falar agora)
+        # Mas mantemos a referencia do concedente visualmente
+        self.live_vereador = self.receptor
+        
+        # Enviar para a tela do plenário se necessário (ainda mostra só um, mas com flag de aparte)
+        self.sync_tela_plenario()
+        
+        # Iniciar cronômetro automaticamente para o aparte
+        self.start_timer()
+        
+        # Atualizar botão para "Encerrar"
+        self.update_aparte_button_state()
+
+    def encerrar_aparte(self):
+        """Encerrar o aparte e devolver a palavra ao concedente"""
+        if not self.is_parte_mode or not hasattr(self, 'concedente'):
+            return
+
+        print("DEBUG: Encerrando aparte...")
+        
+        # Parar timer do aparte
+        self._stop_timer_internal(reset_ui=False)
+        
+        # Calcular tempo gasto no aparte
+        tempo_gasto = 0
+        if hasattr(self, 'aparte_total_seconds'):
+            tempo_gasto = self.aparte_total_seconds - self.remaining_seconds
+            if tempo_gasto < 0: tempo_gasto = 0
+            
+        print(f"DEBUG: Tempo gasto no aparte: {tempo_gasto}s")
+        
+        # Restaurar orador principal e seleção
+        self.live_vereador = self.concedente
+        self.selected_vereador = self.concedente
+        
+        # Restaurar tempo subtraindo o tempo gasto no aparte
+        self.remaining_seconds = self.saved_main_seconds - tempo_gasto
+        if self.remaining_seconds < 0:
+            self.remaining_seconds = 0
+            
+        # Manter o total original do orador (se salvo) ou o saved_seconds
+        if hasattr(self, 'saved_main_total'):
+            self.total_seconds = self.saved_main_total
+        else:
+            self.total_seconds = self.saved_main_seconds
+        
+        # Sair do modo aparte
+        self.is_parte_mode = False
+        self.concedente = None
+        self.receptor = None
+        
+        # Restaurar visual
+        self.update_speaker_panel()
+        self.update_display()
+        
+        # Sincronizar a lista visualmente (tentar achar o item e selecionar)
+        self.sync_list_selection()
+        
+        # Atualizar botão
+        self.update_aparte_button_state()
+        
+        # Sincronizar (volta ao normal)
+        self.sync_tela_plenario()
+
+        # Retomar contagem automaticamente (devolver a palavra)
+        if self.remaining_seconds > 0:
+            self.start_timer()
+        
+
     
     def pause_timer(self):
         """Pausar cronômetro"""
@@ -885,13 +1237,25 @@ class PainelPresidente(QMainWindow):
         self.sync_tela_plenario()
     
     def stop_timer(self):
-        """Parar cronômetro"""
+        """Parar cronômetro (Slot UI / Manual)"""
+        self._stop_timer_internal(reset_ui=True)
+        
+    def _stop_timer_internal(self, reset_ui=True):
+        """Lógica interna de parada"""
         self.is_running = False
         self.is_paused = False
         self.timer.stop()
         
         # Cortar áudio (Async)
         self._run_arduino_async(self.arduino.cut_audio)
+        
+        # Se for apenas uma pausa técnica (transição de aparte), não reseta nada
+        if not reset_ui:
+            return
+
+        # Resetar modo aparte
+        self.is_parte_mode = False
+        self.update_speaker_panel()
         
         # Resetar tempo
         self.remaining_seconds = self.total_seconds
@@ -918,11 +1282,11 @@ class PainelPresidente(QMainWindow):
         # Enviar para Servidor (API)
         api_post('timer', {'action': 'stop', 'total': self.total_seconds})
         
-        # Sincronizar com tela do plenário e RESETAR para logo
+        # Sincronizar com tela do plenário
         self.sync_tela_plenario()
+        
         if self.tela_plenario:
-            self.tela_plenario.timer_started = False  # Resetar flag
-            self.tela_plenario.show_session_info()  # Voltar para logo
+            self.tela_plenario.reset_timer_state()
     
     def update_timer(self):
         """Atualizar cronômetro"""
@@ -943,13 +1307,97 @@ class PainelPresidente(QMainWindow):
     def on_time_up(self):
         """Tempo esgotado"""
         self.stop_timer()
-        QMessageBox.information(self, "Tempo Esgotado", "⏰ O tempo do orador terminou!")
+        
+        # Mostrar Aviso "TEMPO ESGOTADO" no lugar do timer
+        self.timer_label.setText("TEMPO\nESGOTADO")
+        self.timer_label.setStyleSheet("""
+            QLabel {
+                font-size: 60px;
+                font-weight: bold;
+                color: #ff4d4d;
+                background: rgba(255, 0, 0, 0.15);
+                border-radius: 15px;
+                padding: 10px;
+                border: 2px solid #ff4d4d;
+                margin: 10px;
+            }
+        """)
+        
+        # Restaurar display normal após 3 segundos
+        QTimer.singleShot(3000, self.restore_display_style)
+        
+    def restore_display_style(self):
+        """Restaurar display para mostrar o tempo total selecionado"""
+        # Apenas se não estiver rodando (usuário não iniciou outro timer)
+        if not self.is_running:
+            self.update_display()
     
     def update_display(self):
         """Atualizar display do timer"""
         minutes = self.remaining_seconds // 60
         seconds = self.remaining_seconds % 60
         self.timer_label.setText(f"{minutes:02d}:{seconds:02d}")
+        
+        # Estilização do Timer
+        if self.is_parte_mode:
+             # Modo Aparte: Amarelo
+             self.timer_label.setStyleSheet("""
+                QLabel {
+                    font-size: 100px;
+                    font-weight: bold;
+                    color: #fceabb;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 rgba(248, 181, 0, 0.2),
+                        stop:1 rgba(252, 234, 187, 0.2));
+                    border-radius: 15px;
+                    padding: 10px;
+                    border: 2px solid #f8b500;
+                    margin: 10px;
+                }
+            """)
+        elif self.remaining_seconds <= 10 and self.remaining_seconds > 0 and self.is_running:
+             # Danger Zone: Vermelho
+             self.timer_label.setStyleSheet("""
+                QLabel {
+                    font-size: 100px;
+                    font-weight: bold;
+                    color: #e74c3c;
+                    background: rgba(231, 76, 60, 0.1);
+                    border-radius: 15px;
+                    padding: 10px;
+                    border: 2px solid #e74c3c;
+                    margin: 10px;
+                }
+            """)
+        elif self.remaining_seconds <= 30 and self.remaining_seconds > 0 and self.is_running:
+             # Warning Zone: Amarelo/Laranja
+             self.timer_label.setStyleSheet("""
+                QLabel {
+                    font-size: 100px;
+                    font-weight: bold;
+                    color: #f39c12;
+                    background: rgba(243, 156, 18, 0.1);
+                    border-radius: 15px;
+                    padding: 10px;
+                    border: 2px solid #f39c12;
+                    margin: 10px;
+                }
+            """)
+        else:
+             # Normal: Azul
+             self.timer_label.setStyleSheet("""
+                QLabel {
+                    font-size: 100px;
+                    font-weight: bold;
+                    color: #4facfe;
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 rgba(102, 126, 234, 0.1),
+                        stop:1 rgba(118, 75, 162, 0.1));
+                    border-radius: 15px;
+                    padding: 10px;
+                    margin: 10px;
+                }
+            """)
     
     def connect_arduino(self):
         """Conectar ao Arduino"""
@@ -983,36 +1431,109 @@ class PainelPresidente(QMainWindow):
                 }
             """)
     
-    def on_arduino_connection_change(self, connected):
+    def check_connections(self):
+        """Verificar todas as conexões periodicamente e manter Arduino vivo"""
+        # 1. Verificar Arduino (check_connection é rápido)
+        arduino_ok = self.arduino.check_connection()
+        self.update_arduino_status(arduino_ok)
+        
+        # Keep Alive (Resetar watchdog do Arduino para não cortar som)
+        if arduino_ok:
+            self.arduino.keep_alive()
+        
+        # 2. Verificar Servidor (API Ping)
+        self.check_server_status()
+        
+    def update_arduino_status(self, connected):
+        """Atualizar UI do status do Arduino"""
+        self.is_arduino_connected = connected
+        
+        # Se conectou, salvar a porta atual como preferencial
+        if connected and self.arduino.port:
+             if self.session_config:
+                 current_saved = self.session_config.get_arduino_port()
+                 if current_saved != self.arduino.port:
+                     print(f"DEBUG: Salvando nova porta do Arduino: {self.arduino.port}")
+                     self.session_config.set_arduino_port(self.arduino.port)
+        
+        # Atualizar Admin se estiver aberto
+        if self.admin_dialog and self.admin_dialog.isVisible():
+            is_server = getattr(self, 'is_server_connected', False)
+            self.admin_dialog.update_connection_status(connected, is_server)
+
+    def check_server_status(self):
+        """Verificar status do servidor API em background"""
+        # Thread worker simples para não travar
+        worker = threading.Thread(target=self._verify_server_sync, daemon=True)
+        worker.start()
+
+    def _verify_server_sync(self):
+        try:
+            # Aumentando timeout para evitar falso negativo em redes lentas ou Wi-Fi
+            url = "http://127.0.0.1:5000/api/config"
+            with urllib.request.urlopen(url, timeout=3) as response:
+                 # Callback seguro para thread principal (apenas se 200 OK)
+                 if response.status == 200:
+                    QTimer.singleShot(0, lambda: self.update_server_status(True))
+                 else:
+                    QTimer.singleShot(0, lambda: self.update_server_status(False))
+        except Exception as e:
+                 # print(f"Erro ping server: {e}") # Debug opcional
+                 QTimer.singleShot(0, lambda: self.update_server_status(False))
+
+    def update_server_status(self, connected):
+        """Atualizar UI do status do Servidor"""
+        self.is_server_connected = connected
+        
+        # Atualizar Admin se estiver aberto
+        if self.admin_dialog and self.admin_dialog.isVisible():
+            is_arduino = getattr(self, 'is_arduino_connected', False)
+            self.admin_dialog.update_connection_status(is_arduino, connected)
+
+    def on_arduino_connection_change(self, connected, port=None):
         """Callback de mudança de conexão Arduino"""
-        # Status movido para Admin
+        # Atualizar UI na thread principal
+        QTimer.singleShot(0, lambda: self.update_arduino_status(connected))
         # Enviar status para Servidor (API)
         api_post('arduino', {'connected': connected})
-    
+
     def start_websocket(self):
-        """Iniciar thread WebSocket (Desativado - Controle Direto)"""
-        # Status movido para Admin
-        pass
+        """Iniciar verificação do servidor"""
+        self.check_connections()
     
     def on_websocket_connection_change(self, connected):
         """Callback de mudança de conexão WebSocket"""
-        # Status movido para Admin
         pass
     
 
     def open_admin(self):
         """Abrir painel administrativo"""
-        # Sempre criar nova instância para evitar problemas de estado/referência
-        if self.admin_dialog:
-            self.admin_dialog.close()
+        try:
+            # Sempre criar nova instância para evitar problemas de estado/referência
+            if self.admin_dialog:
+                self.admin_dialog.close()
             
-        self.admin_dialog = VereadoresAdminDialog(self)
-        self.admin_dialog.vereadores_updated.connect(self.on_vereadores_updated)
-        self.admin_dialog.session_updated.connect(self.on_session_updated)
-        
-        self.admin_dialog.show()
-        self.admin_dialog.raise_()
-        self.admin_dialog.activateWindow()
+            # Debug
+            print("Tentando abrir painel admin...")
+                
+            self.admin_dialog = VereadoresAdminDialog(self)
+            self.admin_dialog.vereadores_updated.connect(self.on_vereadores_updated)
+            self.admin_dialog.session_updated.connect(self.on_session_updated)
+            
+            # Injetar estado atual das conexões
+            is_arduino = getattr(self, 'is_arduino_connected', False)
+            is_server = getattr(self, 'is_server_connected', False)
+            self.admin_dialog.update_connection_status(is_arduino, is_server)
+            
+            self.admin_dialog.show()
+            self.admin_dialog.raise_()
+            self.admin_dialog.activateWindow()
+            print("Painel admin aberto com sucesso.")
+        except Exception as e:
+            import traceback
+            error_msg = f"Erro ao abrir Admin:\n{str(e)}\n\n{traceback.format_exc()}"
+            print(error_msg)
+            QMessageBox.critical(self, "Erro no Admin", error_msg)
     
     def on_vereadores_updated(self):
         """Callback quando vereadores são atualizados"""
@@ -1039,121 +1560,6 @@ class PainelPresidente(QMainWindow):
             self.tela_plenario.show()
             print("✅ Tela do Plenário aberta")
     
-    def toggle_aparte(self):
-        """Alternar modo Aparte (Com troca de contexto e cálculo de uso)"""
-        if self.btn_aparte.isChecked():
-            # INICIAR APARTE
-            
-            # Validar se temos tempo "staged" (preparado)
-            if self.staged_seconds > 0:
-                novo_tempo = self.staged_seconds
-            else:
-                # Se não selecionou tempo, usa 1 min padrão ou pergunta?
-                novo_tempo = 60
-            
-            # Salvar estado do orador principal (SEM SUBTRAIR AINDA)
-            self.saved_main_seconds = self.remaining_seconds
-            self.aparte_initial_seconds = novo_tempo # Guardar total concedido
-            
-            self.main_speaker = self.live_vereador # Quem estava falando antes
-            
-            # Definir novo orador como o Selecionado na lista
-            self.aparte_speaker = self.selected_vereador
-            self.live_vereador = self.aparte_speaker # Agora ele é o vivo
-            
-            # Aplicar novo tempo
-            self.remaining_seconds = novo_tempo
-            self.is_active_aparte = True
-            self.update_display()
-            
-            # Atualizar UI Botão
-            self.btn_aparte.setText("🛑 ENCERRAR APARTE")
-            self.btn_aparte.setStyleSheet("""
-                QPushButton {
-                    background: #c0392b;
-                    color: white;
-                    font-weight: bold;
-                    font-size: 16px;
-                    border-radius: 8px;
-                    margin-top: 10px;
-                } 
-                QPushButton:hover { background: #e74c3c; }
-            """)
-            
-            # Timer Amarelo
-            self.timer_label.setStyleSheet("""
-                QLabel {
-                    font-size: 120px;
-                    font-weight: bold;
-                    color: #fceabb;
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                        stop:0 rgba(248, 181, 0, 0.2),
-                        stop:1 rgba(252, 234, 187, 0.2));
-                    border-radius: 15px;
-                    padding: 20px;
-                    border: 2px solid #f8b500;
-                }
-            """)
-            
-            self.sync_tela_plenario()
-            
-            # Garantir start se não estiver rodando
-            if not self.is_running:
-                 self.start_timer()
-            
-        else:
-            # ENCERRAR APARTE (Restaurar)
-            self.is_active_aparte = False
-            self.aparte_speaker = None
-            
-            # Calcular tempo efetivamente usado no aparte
-            tempo_usado = self.aparte_initial_seconds - self.remaining_seconds
-            if tempo_usado < 0: tempo_usado = 0
-            
-            # Restaurar Orador Principal
-            if self.main_speaker:
-                self.live_vereador = self.main_speaker
-                
-                # Restaurar tempo subtraindo APENAS O QUE FOI USADO
-                self.remaining_seconds = self.saved_main_seconds - tempo_usado
-                if self.remaining_seconds < 0: self.remaining_seconds = 0
-                
-            self.update_display()
-            
-            # Restaurar UI Botão
-            self.btn_aparte.setText("🗣️ CONCEDER APARTE")
-            self.btn_aparte.setStyleSheet("""
-                QPushButton {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #e67e22, stop:1 #f39c12);
-                    color: white;
-                    font-weight: bold;
-                    font-size: 16px;
-                    border-radius: 8px;
-                    margin-top: 10px;
-                }
-                QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                        stop:0 #d35400, stop:1 #e67e22);
-                }
-            """)
-            
-            # Timer Azul
-            self.timer_label.setStyleSheet("""
-                QLabel {
-                    font-size: 120px;
-                    font-weight: bold;
-                    color: #4facfe;
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                        stop:0 rgba(102, 126, 234, 0.1),
-                        stop:1 rgba(118, 75, 162, 0.1));
-                    border-radius: 15px;
-                    padding: 20px;
-                }
-            """)
-            
-            self.sync_tela_plenario()
-
     def sync_tela_plenario(self):
         """Sincronizar dados com tela do plenário"""
         if self.tela_plenario:
@@ -1164,71 +1570,11 @@ class PainelPresidente(QMainWindow):
                  # Fallback para preview se parado
                  self.tela_plenario.update_vereador(self.selected_vereador)
             
-            # Atualizar timer (Passar flag de aparte)
-            self.tela_plenario.update_timer(self.remaining_seconds, self.is_active_aparte)
+            # Atualizar timer (Passar total para barra de progresso e flag de aparte)
+            self.tela_plenario.update_timer(self.remaining_seconds, self.total_seconds, self.is_parte_mode)
             
             # Atualizar status
             self.tela_plenario.update_status(self.is_running)
-
-    def update_timer(self):
-        """Atualizar cronômetro"""
-        if self.remaining_seconds > 0:
-            self.remaining_seconds -= 1
-            self.update_display()
-            
-            # Enviar para Servidor (API)
-            api_post('timer', {'action': 'update', 'remaining': self.remaining_seconds})
-            
-            # Sincronizar com tela do plenário
-            self.sync_tela_plenario()
-            
-            # Verificar se chegou a zero
-            if self.remaining_seconds == 0:
-                self.on_time_up()
-                if self.is_active_aparte:
-                      self.btn_aparte.setChecked(False) # Forçar estado checked=False
-                      self.toggle_aparte() # Chamar toggle para resetar visual
-                
-                self.btn_aparte.setEnabled(False)
-            else:
-                 self.btn_aparte.setEnabled(True)
-    
-    def on_time_up(self):
-        """Tempo esgotado"""
-        self.stop_timer()
-        
-        # Exibir mensagem no display (5 segundos)
-        self.timer_label.setText("TEMPO\nESGOTADO")
-        self.timer_label.setStyleSheet("""
-            QLabel {
-                font-size: 60px;
-                font-weight: bold;
-                color: #ffffff;
-                background: #c0392b;
-                border-radius: 15px;
-                padding: 10px;
-                border: 2px solid #e74c3c;
-            }
-        """)
-        
-        # Restaurar display após 5 segundos
-        QTimer.singleShot(5000, self.reset_timer_display)
-
-    def reset_timer_display(self):
-        """Restaurar display do timer para o normal"""
-        self.timer_label.setText("00:00")
-        self.timer_label.setStyleSheet("""
-            QLabel {
-                font-size: 120px;
-                font-weight: bold;
-                color: #4facfe;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(102, 126, 234, 0.1),
-                    stop:1 rgba(118, 75, 162, 0.1));
-                border-radius: 15px;
-                padding: 20px;
-            }
-        """)
     
     def closeEvent(self, event):
         """Evento de fechamento da janela"""
@@ -1250,25 +1596,20 @@ class PainelPresidente(QMainWindow):
 def main():
     """Função principal"""
     
-    # Verificar se servidor já está rodando
-    import socket
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    result = sock.connect_ex(('127.0.0.1', 5000))
-    sock.close()
+    logger_setup.setup_logger("painel")
 
-    if result == 0:
-        print("✅ Servidor já está rodando (detectado na porta 5000)")
-    else:
-        # Iniciar servidor Flask em processo separado
-        print("🚀 Iniciando servidor Flask-SocketIO em background...")
-        server_process = multiprocessing.Process(target=server.run_server, daemon=True)
-        server_process.start()
-        
-        # Aguardar servidor iniciar
-        import time
-        time.sleep(2)
-        print("✅ Servidor iniciado!\n")
+    # Iniciar servidor Flask-SocketIO em THREAD (Processo Único)
+    # Isso unifica logs e simplifica o gerenciamento
+    import threading
+    print("🚀 Iniciando servidor Flask-SocketIO (Integrado) - Acessível na Rede...")
+    # host='0.0.0.0' libera o acesso para outros computadores na mesma rede WiFi/Cabo
+    server_thread = threading.Thread(target=server.run_server, kwargs={'host': '0.0.0.0', 'debug': False}, daemon=True)
+    server_thread.start()
     
+    # Aguardar um pouco para garantir que servidor subiu
+    import time
+    time.sleep(1)
+
     app = QApplication(sys.argv)
     
     # Configurar fonte padrão

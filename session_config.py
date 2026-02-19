@@ -29,6 +29,9 @@ class SessionConfig:
                     'background': '#000000'
                 })
                 
+                # Arduino Checkpoint
+                self.arduino_port = data.get('arduino_port', None)
+                
         except FileNotFoundError:
             self.logo_path = None
             self.session_name = ''
@@ -38,6 +41,7 @@ class SessionConfig:
                 'secondary': '#067b42',
                 'background': '#000000'
             }
+            self.arduino_port = None
             self.save_config()
     
     def save_config(self):
@@ -46,7 +50,8 @@ class SessionConfig:
             'logo_path': self.logo_path,
             'session_name': self.session_name, # Salva como name
             'active_list': self.active_list,
-            'colors': self.colors
+            'colors': self.colors,
+            'arduino_port': self.arduino_port
         }
         print(f"DEBUG: Gravando JSON session_name='{self.session_name}'")
         with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -99,3 +104,12 @@ class SessionConfig:
         if not self.active_list:
             return 'presets/padrao.json'
         return self.active_list
+        
+    def set_arduino_port(self, port):
+        """Salvar porta do Arduino"""
+        self.arduino_port = port
+        self.save_config()
+        
+    def get_arduino_port(self):
+        """Obter porta salva do Arduino"""
+        return self.arduino_port

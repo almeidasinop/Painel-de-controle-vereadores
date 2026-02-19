@@ -13,6 +13,9 @@ import sys
 
 # Adicionar diretório atual ao path para importar módulos locais
 sys.path.append(os.path.dirname(__file__))
+import logger_setup
+logger_setup.setup_logger("server")
+
 from session_config import SessionConfig
 
 # Configuração do Flask

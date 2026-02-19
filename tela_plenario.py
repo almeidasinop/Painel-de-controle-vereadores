@@ -4,8 +4,8 @@ Exibição fullscreen de foto, nome, partido e cronômetro
 """
 
 import sys
-from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QProgressBar
+from PySide6.QtCore import Qt, QTimer, Slot, QDate, QLocale
 from PySide6.QtGui import QFont, QPixmap, QScreen
 import os
 
@@ -24,16 +24,34 @@ class TelaPlenario(QMainWindow):
         
         # Layout principal
         main_layout = QVBoxLayout()
-        main_layout.setContentsMargins(50, 50, 50, 50)
-        main_layout.setSpacing(30)
+        main_layout.setContentsMargins(30, 10, 30, 20)
+        main_layout.setSpacing(5)
+        
+        # --- HEADER (Sessão e Data) ---
+        self.header_label = QLabel()
+        self.header_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.header_label.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                color: rgba(255, 255, 255, 0.9);
+                font-weight: 500;
+                padding: 8px 20px;
+                background: rgba(0, 0, 0, 0.4);
+                border-radius: 15px;
+            }
+        """)
+        main_layout.addWidget(self.header_label)
+        
+        # Spacer
+        main_layout.addStretch(1)
         
         # Foto do vereador
         self.foto_label = QLabel()
         self.foto_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.foto_label.setFixedSize(400, 400)
+        self.foto_label.setFixedSize(280, 280)
         self.foto_label.setStyleSheet("""
             QLabel {
-                border: 5px solid rgba(102, 126, 234, 0.5);
+                border: 4px solid rgba(255, 255, 255, 0.3);
                 border-radius: 20px;
                 background: rgba(255, 255, 255, 0.05);
             }
@@ -42,16 +60,17 @@ class TelaPlenario(QMainWindow):
         main_layout.addWidget(self.foto_label, 0, Qt.AlignmentFlag.AlignCenter)
         
         # Nome do vereador
-        self.nome_label = QLabel("Aguardando...")
+        self.nome_label = QLabel("")
         self.nome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.nome_label.setStyleSheet("""
             QLabel {
-                font-size: 72px;
+                font-size: 90px;
                 font-weight: bold;
                 color: #ffffff;
-                background: rgba(0, 0, 0, 0.3);
-                border-radius: 15px;
-                padding: 20px;
+                background: rgba(0, 40, 80, 0.6);
+                border-radius: 10px;
+                padding: 0px 0;
+                margin: 5px 0;
             }
         """)
         main_layout.addWidget(self.nome_label)
@@ -62,53 +81,78 @@ class TelaPlenario(QMainWindow):
         self.partido_label.setStyleSheet("""
             QLabel {
                 font-size: 48px;
-                font-weight: 600;
-                color: #ffffff;
-                padding: 10px;
+                font-weight: 500;
+                color: #dddddd;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+                padding: 5px;
             }
         """)
         main_layout.addWidget(self.partido_label)
         
-        # Cronômetro
+        # Spacer
+        main_layout.addStretch(1)
+        
+        # --- CONTAINER DO TIMER (Estilo Refined) ---
+        self.timer_container = QWidget()
+        self.timer_container.setStyleSheet("""
+            QWidget {
+                background: rgba(30, 144, 255, 0.15);
+                border: 2px solid rgba(255, 255, 255, 0.5);
+                border-radius: 30px;
+            }
+        """)
+        timer_layout = QVBoxLayout(self.timer_container)
+        timer_layout.setContentsMargins(40, 5, 40, 15)
+        timer_layout.setSpacing(0)
+        
+        # Cronômetro Texto
         self.timer_label = QLabel("00:00")
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timer_label.setStyleSheet("""
             QLabel {
-                font-size: 180px;
+                font-size: 210px;
                 font-weight: bold;
                 color: #ffffff;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(102, 126, 234, 0.2),
-                    stop:1 rgba(118, 75, 162, 0.2));
-                border-radius: 25px;
-                padding: 40px;
-                margin: 20px;
+                background: transparent;
+                border: none;
+                font-family: 'Segoe UI', sans-serif;
+                margin-bottom: -10px; /* Ajuste fino */
             }
         """)
-        main_layout.addWidget(self.timer_label)
+        timer_layout.addWidget(self.timer_label)
         
-        # Status
-        self.status_label = QLabel("⏸️ Aguardando")
-        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setStyleSheet("""
-            QLabel {
-                font-size: 36px;
-                font-weight: bold;
-                color: #ffffff;
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 20px;
-                padding: 15px 30px;
+        # Barra de Progresso
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(12)
+        self.progress_bar.setTextVisible(False)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                border: none;
+                border-radius: 6px;
+                background-color: rgba(0, 0, 0, 0.3);
+            }
+            QProgressBar::chunk {
+                background-color: #00f2fe;
+                border-radius: 6px;
             }
         """)
-        main_layout.addWidget(self.status_label)
+        timer_layout.addWidget(self.progress_bar)
         
-        main_layout.addStretch()
+        main_layout.addWidget(self.timer_container, 0, Qt.AlignmentFlag.AlignCenter)
+        
+        # Status REMOVIDO conforme soliticação
+        # self.status_label = QLabel("") 
+        # main_layout.addWidget(self.status_label)
+        
+        # Spacer
+        main_layout.addStretch(1)
         
         central_widget.setLayout(main_layout)
         
         # Aplicar estilo global (Imagem de fundo)
         bg_path = os.path.join(os.path.dirname(__file__), "fotos", "Cópia de TELA DE TEMPO.png")
-        # Normalizar path para formato que o Qt aceita (forward slashes)
         bg_path = bg_path.replace("\\", "/")
         
         self.setStyleSheet(f"""
@@ -119,9 +163,27 @@ class TelaPlenario(QMainWindow):
         
         # Fullscreen
         self.showFullScreen()
-        
-        # Permitir sair com ESC
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint)
+        
+        # Atualizar header inicial
+        self.update_header()
+
+    def update_header(self):
+        """Atualizar data e sessão no header"""
+        # Data
+        locale = QLocale(QLocale.Portuguese, QLocale.Brazil)
+        date_str = locale.toString(QDate.currentDate(), "dddd, d 'de' MMMM 'de' yyyy")
+        # Capitalizar primeira letra
+        date_str = date_str[0].upper() + date_str[1:] if date_str else ""
+        
+        # Sessão
+        session_name = ""
+        if hasattr(self, 'session_config'):
+             session_name = self.session_config.get_session_number() or "SESSÃO"
+        else:
+             session_name = "SESSÃO"
+        
+        self.header_label.setText(f"{session_name}   •   {date_str}")
     
     def move_to_second_monitor(self):
         """Mover janela para segundo monitor se disponível"""
@@ -153,6 +215,11 @@ class TelaPlenario(QMainWindow):
         """Atualizar vereador exibido"""
         self.current_vereador = vereador
         
+        # Se o timer container NÃO estiver visível, estamos em MODO SESSÃO
+        # Não atualizar visualmente para não quebrar o layout da sessão
+        if hasattr(self, 'timer_container') and not self.timer_container.isVisible():
+             return
+
         if vereador:
             self.nome_label.setText(vereador['nome'])
             self.partido_label.setText(vereador['partido'])
@@ -162,12 +229,13 @@ class TelaPlenario(QMainWindow):
                 foto_path = os.path.join(os.path.dirname(__file__), vereador['foto'])
                 if os.path.exists(foto_path):
                     pixmap = QPixmap(foto_path)
+                    # Escalar para o tamanho do widget (320x320)
                     self.foto_label.setPixmap(
-                        pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                        pixmap.scaled(280, 280, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
                     )
                     self.foto_label.setStyleSheet("""
                         QLabel {
-                            border: 5px solid rgba(102, 126, 234, 0.5);
+                            border: 4px solid rgba(255, 255, 255, 0.3);
                             border-radius: 20px;
                         }
                     """)
@@ -176,7 +244,7 @@ class TelaPlenario(QMainWindow):
             else:
                 self.set_placeholder_photo()
         else:
-            self.nome_label.setText("Aguardando...")
+            self.nome_label.setText("")
             self.partido_label.setText("")
             self.set_placeholder_photo()
     
@@ -205,100 +273,102 @@ class TelaPlenario(QMainWindow):
 
     # ... (init_ui and others remain same, skipping to update_timer)
 
-    @Slot(int)
-    def update_timer(self, seconds, is_aparte=False):
-        """Atualizar cronômetro"""
+    @Slot(int, int, bool)
+    def update_timer(self, seconds, total_seconds=0, is_aparte=False):
+        """Atualizar cronômetro e barra de progresso"""
+        try:
+            # Compatibilidade com chamada antiga (seconds, is_aparte) -> Onde is_aparte entra no lugar de total_seconds
+            if isinstance(total_seconds, bool):
+                is_aparte = total_seconds
+                total_seconds = 0
+        except:
+            pass
+            
+
+            
         self.remaining_seconds = seconds
         minutes = seconds // 60
         secs = seconds % 60
         self.timer_label.setText(f"{minutes:02d}:{secs:02d}")
         
+        # Atualizar Barra de Progresso
+        if hasattr(self, 'progress_bar'):
+            if total_seconds > 0:
+                progress = int((seconds / total_seconds) * 100)
+                self.progress_bar.setValue(progress)
+                
+                # Mudar cor da barra baseada no tempo
+                if is_aparte:
+                    chunk_color = "#f8b500" # Amarelo
+                elif seconds <= 10:
+                    chunk_color = "#e74c3c" # Vermelho
+                elif seconds <= 30:
+                    chunk_color = "#f39c12" # Laranja
+                else:
+                    chunk_color = "#00f2fe" # Azul
+                    
+                self.progress_bar.setStyleSheet(f"""
+                    QProgressBar {{
+                        border: none;
+                        border-radius: 4px;
+                        background-color: rgba(0, 0, 0, 0.3);
+                    }}
+                    QProgressBar::chunk {{
+                        background-color: {chunk_color};
+                        border-radius: 4px;
+                    }}
+                """)
+            else:
+                self.progress_bar.setValue(0)
+
         # Modo Aparte
         if is_aparte:
              self.blink_timer.stop()
-             self.timer_label.setVisible(True) # Garantir visibilidade
+             self.timer_label.setVisible(True)
              
              self.timer_label.setStyleSheet("""
                 QLabel {
-                    font-size: 180px;
+                    font-size: 210px;
                     font-weight: bold;
                     color: #fceabb;
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                        stop:0 rgba(248, 181, 0, 0.2),
-                        stop:1 rgba(252, 234, 187, 0.2));
-                    border-radius: 25px;
-                    padding: 40px;
-                    border: 3px solid #f8b500;
-                    margin: 20px;
-                }
-            """)
-             # Opcional: Adicionar label de "EM APARTE" em algum lugar ou mudar o status
-             self.status_label.setText("🗣️ EM APARTE")
-             self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 36px;
-                    font-weight: bold;
-                    color: #ffffff;
-                    background: #f8b500;
-                    border-radius: 20px;
-                    padding: 15px 30px;
+                    background: transparent;
+                    border: none;
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
                 }
             """)
              return
 
-        # Modo Normal - Verificar Tempo
+        # Modo Normal - Verificar Tempo (Piscar)
         if seconds <= 60 and seconds > 0:
-            # Danger Zone - Vermelho e Piscando
-            
-            # Definir velocidade do pisca
             if seconds <= 10:
-                interval = 200 # Muito rápido
+                interval = 200
             elif seconds <= 30:
-                interval = 500 # Médio
+                interval = 500
             else:
-                interval = 1000 # Lento
+                interval = 1000
                 
             if not self.blink_timer.isActive() or self.blink_timer.interval() != interval:
                 self.blink_timer.start(interval)
             
-            # Estilos para o Pisca (Apenas texto muda)
-            base_style = """
-                QLabel {
-                    font-size: 180px;
-                    font-weight: bold;
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                        stop:0 rgba(255, 0, 0, 0.1),
-                        stop:1 rgba(100, 0, 0, 0.1));
-                    border-radius: 25px;
-                    padding: 40px;
-                    margin: 20px;
-                    border: 2px solid #ff0000;
-            """
+            # Estilos apenas mudam cor do texto
+            self.style_blink_on = "font-size: 210px; font-weight: bold; background: transparent; border: none; color: #ff0000;"
+            self.style_blink_off = "font-size: 210px; font-weight: bold; background: transparent; border: none; color: rgba(255, 0, 0, 0.1);"
             
-            self.style_blink_on = base_style + "color: #ff0000; }"
-            self.style_blink_off = base_style + "color: rgba(255, 0, 0, 0.1); }" # Texto quase invisível
-            
-            # Se o timer acabou de começar, aplica estilo imediatamente
             if self.blink_state:
                  self.timer_label.setStyleSheet(self.style_blink_on)
             
         else:
-            # Normal ou Zerado
             self.blink_timer.stop()
             self.timer_label.setVisible(True)
             self.blink_state = True
             
             self.timer_label.setStyleSheet("""
                 QLabel {
-                    font-size: 180px;
+                    font-size: 210px;
                     font-weight: bold;
                     color: #ffffff;
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                        stop:0 rgba(102, 126, 234, 0.2),
-                        stop:1 rgba(118, 75, 162, 0.2));
-                    border-radius: 25px;
-                    padding: 40px;
-                    margin: 20px;
+                    background: transparent;
+                    border: none;
                 }
             """)
 
@@ -316,86 +386,126 @@ class TelaPlenario(QMainWindow):
         """Atualizar status"""
         self.is_running = is_running
         
-        if is_running and not self.timer_started:
-            # Primeira vez que inicia - mostrar informações do vereador
-            self.timer_started = True
-            self.show_vereador_info()
-        
         if is_running:
-            self.status_label.setText("▶️ Em Execução")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 36px;
-                    font-weight: bold;
-                    color: #ffffff;
-                    background: rgba(0, 242, 254, 0.2);
-                    border-radius: 20px;
-                    padding: 15px 30px;
-                }
-            """)
+            # Garantir container visível
+            if hasattr(self, 'timer_container') and not self.timer_container.isVisible():
+                 self.timer_container.setVisible(True)
+                 
+            # Verificar se precisamos transicionar da tela de sessão para vereador
+            # Se o timer_label está oculto, significa que estamos no modo "Sessão"
+            if not self.timer_label.isVisible() or not self.timer_started:
+                print("DEBUG: Restaurando Visual Vereador (update_status)")
+                self.timer_started = True
+                self.show_vereador_info()
+        
+            # Ocultar mensagem "Em Execução" para limpar a tela
+            pass
         else:
             if not self.timer_started:
                 # Se ainda não iniciou, manter logo/sessão
                 self.show_session_info()
             
-            self.status_label.setText("⏸️ Aguardando")
-            self.status_label.setStyleSheet("""
-                QLabel {
-                    font-size: 36px;
-                    font-weight: bold;
-                    color: #ffffff;
-                    background: rgba(255, 255, 255, 0.1);
-                    border-radius: 20px;
-                    padding: 15px 30px;
-                }
-            """)
+            # Status Removido
+
+
+    def reset_timer_state(self):
+        """Resetar estado do timer (Voltar para tela de sessão)"""
+        self.timer_started = False
+        self.show_session_info()
     
     def show_session_info(self):
-        """Mostrar logo e número da sessão"""
+        """Mostrar logo e número da sessão (Tela de Espera Limpa)"""
+        # Esconder Painel do Timer
+        if hasattr(self, 'timer_container'):
+             self.timer_container.setVisible(False)
+             
+        self.timer_label.setVisible(False)
+        # self.status_label.setVisible(False) # Removido
+        
+        # Aumentar Logo e Remover Bordas
+        self.foto_label.setFixedSize(450, 450)
+        
         # Carregar logo se existir
         logo_path = self.session_config.get_logo()
         if logo_path and os.path.exists(logo_path):
             pixmap = QPixmap(logo_path)
+            # Escalar mantendo aspecto, sem cortes
             self.foto_label.setPixmap(
-                pixmap.scaled(400, 400, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                pixmap.scaled(450, 450, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
-            self.foto_label.setStyleSheet("""
-                QLabel {
-                    border: 5px solid rgba(102, 126, 234, 0.5);
-                    border-radius: 20px;
-                }
-            """)
+            self.foto_label.setStyleSheet("border: none; background: transparent;")
         else:
             self.foto_label.setText("🏛️")
-            self.foto_label.setStyleSheet("""
-                QLabel {
-                    border: 5px solid rgba(102, 126, 234, 0.5);
-                    border-radius: 20px;
-                    background: rgba(255, 255, 255, 0.05);
-                    font-size: 200px;
-                    color: rgba(255, 255, 255, 0.3);
-                }
-            """)
+            self.foto_label.setStyleSheet("border: none; background: transparent; font-size: 250px; color: rgba(255, 255, 255, 0.5);")
         
-        # Mostrar número da sessão
+        # Mostrar número da sessão com DESTAQUE MAIOR
         session_number = self.session_config.get_session_number()
+        
+        # Estilo de Destaque para Sessão
+        self.nome_label.setStyleSheet("""
+            QLabel {
+                font-size: 70px;
+                font-weight: 900;
+                color: #ffffff;
+                background: transparent;
+                padding: 20px 0;
+            }
+        """)
+        
         if session_number:
             self.nome_label.setText(session_number)
             self.partido_label.setText("CÂMARA MUNICIPAL")
+            self.partido_label.setStyleSheet("""
+                QLabel {
+                    font-size: 40px;
+                    font-weight: bold;
+                    color: #eeeeee;
+                    letter-spacing: 4px;
+                    background: transparent;
+                }
+            """)
         else:
-            # Sem número de sessão - mostrar apenas texto padrão
             self.nome_label.setText("CÂMARA MUNICIPAL")
             self.partido_label.setText("")
-        
-        # Esconder timer e status
-        self.timer_label.setVisible(False)
-        self.status_label.setVisible(False)
     
     def show_vereador_info(self):
-        """Mostrar informações do vereador"""
-        # Mostrar timer e status
+        """Mostrar informações do vereador (Restaurar Layout Padrão)"""
+        # Marcar explicitamente que iniciamos o modo orador
+        self.timer_started = True
+        
+        # Mostrar Painel do Timer
+        if hasattr(self, 'timer_container'):
+             self.timer_container.setVisible(True)
+             
         self.timer_label.setVisible(True)
-        self.status_label.setVisible(True)
+        # Status depende do is_running, mas deixamos visivel se precisar (ele se auto-gere no update_status)
+        
+        # Restaurar Tamanho da Foto
+        self.foto_label.setFixedSize(280, 280)
+        
+        # Restaurar Estilos de Texto
+        self.nome_label.setStyleSheet("""
+            QLabel {
+                font-size: 90px;
+                font-weight: bold;
+                color: #ffffff;
+                background: rgba(0, 40, 80, 0.6);
+                border-radius: 10px;
+                padding: 0px 0;
+                margin: 5px 0;
+            }
+        """)
+        
+        self.partido_label.setStyleSheet("""
+            QLabel {
+                font-size: 48px;
+                font-weight: 500;
+                color: #dddddd;
+                text-transform: uppercase;
+                letter-spacing: 2px;
+                padding: 5px;
+            }
+        """)
         
         # Atualizar com vereador atual se existir
         if self.current_vereador:

@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QFileDialog, QGroupBox, QFormLayout, QWidget, QInputDialog,
-    QTabWidget, QColorDialog, QFrame, QScrollArea, QApplication
+    QTabWidget, QColorDialog, QFrame, QScrollArea, QApplication,
+    QComboBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QIcon, QColor, QFont
@@ -60,6 +61,64 @@ class VereadoresAdminDialog(QDialog):
         if not os.path.exists(self.json_path):
             with open(self.json_path, 'w', encoding='utf-8') as f:
                 json.dump([], f)
+
+    def update_connection_status(self, arduino_enabled, server_enabled):
+        """Atualiza indicadores de status na interface admin"""
+        # Arduino
+        if arduino_enabled:
+            self.arduino_status.setText("✅ Arduino: Conectado")
+            self.arduino_status.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    background-color: rgba(0, 242, 254, 0.4);
+                    border: 1px solid #00f2fe;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
+        else:
+            self.arduino_status.setText("❌ Arduino: Desconectado")
+            self.arduino_status.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    background-color: rgba(250, 112, 154, 0.4);
+                    border: 1px solid #fa709a;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
+            
+        # Servidor
+        if server_enabled:
+            self.websocket_status.setText("✅ WebSocket/API: Online")
+            self.websocket_status.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    background-color: rgba(0, 242, 254, 0.4);
+                    border: 1px solid #00f2fe;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
+        else:
+            self.websocket_status.setText("❌ WebSocket/API: Offline")
+            self.websocket_status.setStyleSheet("""
+                QLabel {
+                    font-size: 16px;
+                    font-weight: bold;
+                    color: #ffffff;
+                    background-color: rgba(250, 112, 154, 0.4);
+                    border: 1px solid #fa709a;
+                    border-radius: 8px;
+                    padding: 10px;
+                }
+            """)
     
     def init_ui(self):
         """Inicializar interface com ABAS"""
@@ -114,6 +173,33 @@ class VereadoresAdminDialog(QDialog):
         self.btn_excluir.clicked.connect(self.excluir_vereador)
         self.btn_excluir.setEnabled(False)
         btn_layout.addWidget(self.btn_excluir)
+        
+        btn_layout.addSpacing(20)
+        
+        # --- Controles de Reordenação ---
+        order_layout = QHBoxLayout()
+        order_layout.setSpacing(5)
+        
+        btn_up = QPushButton("⬆️")
+        btn_up.setToolTip("Mover para cima")
+        btn_up.clicked.connect(self.mover_cima)
+        btn_up.setFixedWidth(50)
+        
+        btn_down = QPushButton("⬇️")
+        btn_down.setToolTip("Mover para baixo")
+        btn_down.clicked.connect(self.mover_baixo)
+        btn_down.setFixedWidth(50)
+        
+        btn_save_order = QPushButton("💾 Salvar Ordem")
+        btn_save_order.setToolTip("Salvar nova ordem da lista")
+        btn_save_order.clicked.connect(self.salvar_ordem_lista)
+        btn_save_order.setStyleSheet("background-color: #f1c40f; color: black; font-weight: bold;")
+        
+        order_layout.addWidget(btn_up)
+        order_layout.addWidget(btn_down)
+        order_layout.addWidget(btn_save_order)
+        
+        btn_layout.addLayout(order_layout)
         
         btn_layout.addSpacing(20)
         
@@ -334,7 +420,31 @@ class VereadoresAdminDialog(QDialog):
         
         list_btn_layout.addWidget(btn_novo)
         list_btn_layout.addWidget(btn_excluir)
+        list_btn_layout.addWidget(btn_novo)
+        list_btn_layout.addWidget(btn_excluir)
         left_layout.addLayout(list_btn_layout)
+        
+        # --- Controles de Reordenação ---
+        order_layout = QHBoxLayout()
+        
+        btn_up = QPushButton("⬆️")
+        btn_up.setToolTip("Mover para cima")
+        btn_up.clicked.connect(self.mover_cima)
+        
+        btn_down = QPushButton("⬇️")
+        btn_down.setToolTip("Mover para baixo")
+        btn_down.clicked.connect(self.mover_baixo)
+        
+        btn_save_order = QPushButton("💾 Salvar Ordem")
+        btn_save_order.setToolTip("Salvar nova ordem da lista")
+        btn_save_order.clicked.connect(self.salvar_ordem_lista)
+        btn_save_order.setStyleSheet("background-color: #f1c40f; color: black;")
+        
+        order_layout.addWidget(btn_up)
+        order_layout.addWidget(btn_down)
+        order_layout.addWidget(btn_save_order)
+        
+        left_layout.addLayout(order_layout)
         
         # Coluna Direita: Formulário
         right_layout = QVBoxLayout()
@@ -445,6 +555,46 @@ class VereadoresAdminDialog(QDialog):
             }
         """)
         connections_layout.addWidget(self.arduino_status)
+        
+        # --- Controles Arduino Avançados ---
+        arduino_controls = QHBoxLayout()
+        
+        # Combo de Portas
+        self.combo_ports = QComboBox()
+        self.combo_ports.setMinimumWidth(150)
+        self.refresh_ports() # Popular inicialmente
+        arduino_controls.addWidget(self.combo_ports)
+        
+        # Botão Atualizar Lista
+        btn_refresh = QPushButton("🔄")
+        btn_refresh.setFixedWidth(40)
+        btn_refresh.setToolTip("Atualizar lista de portas")
+        btn_refresh.clicked.connect(self.refresh_ports)
+        arduino_controls.addWidget(btn_refresh)
+        
+        # Botão Conectar Manual
+        btn_connect = QPushButton("Conectar")
+        btn_connect.clicked.connect(self.manual_connect_arduino)
+        btn_connect.setStyleSheet("background-color: #2980b9;")
+        arduino_controls.addWidget(btn_connect)
+        
+        connections_layout.addLayout(arduino_controls)
+        
+        # Botões de Teste
+        test_layout = QHBoxLayout()
+        btn_open = QPushButton("🔊 Testar: ABRIR")
+        btn_open.clicked.connect(lambda: self.test_arduino('1'))
+        btn_open.setStyleSheet("background-color: #27ae60; color: white;")
+        
+        btn_cut = QPushButton("🔇 Testar: CORTAR")
+        btn_cut.clicked.connect(lambda: self.test_arduino('0'))
+        btn_cut.setStyleSheet("background-color: #c0392b; color: white;")
+        
+        test_layout.addWidget(btn_open)
+        test_layout.addWidget(btn_cut)
+        connections_layout.addLayout(test_layout)
+        
+        connections_layout.addSpacing(10)
         
         self.websocket_status = QLabel("❌ WebSocket: Desconectado")
         self.websocket_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -593,6 +743,47 @@ class VereadoresAdminDialog(QDialog):
             self.new_logo_path = file
             self.logo_path_label.setText(os.path.basename(file))
 
+    
+    def refresh_ports(self):
+        """Atualizar lista de portas COM"""
+        self.combo_ports.clear()
+        if self.parent() and hasattr(self.parent(), 'arduino'):
+            ports = self.parent().arduino.list_available_ports()
+            for port in ports:
+                # Exibe: "COM3 - USB-SERIAL CH340"
+                self.combo_ports.addItem(f"{port['device']} - {port['description']}", port['device'])
+            
+            if self.combo_ports.count() == 0:
+                self.combo_ports.addItem("Nenhuma porta encontrada")
+
+    def manual_connect_arduino(self):
+        """Forçar conexão na porta selecionada"""
+        port_device = self.combo_ports.currentData()
+        if not port_device:
+            return
+            
+        if self.parent() and hasattr(self.parent(), 'arduino'):
+            self.parent().arduino.disconnect() # Desconecta anterior
+            if self.parent().arduino.connect(port_device):
+                QMessageBox.information(self, "Sucesso", f"Conectado a {port_device} com sucesso!")
+                # Atualizar status visual via callback natural ou forçado
+                self.update_connection_status(True, getattr(self.parent(), 'is_server_connected', False))
+            else:
+                QMessageBox.warning(self, "Erro", f"Falha ao conectar em {port_device}.")
+                self.update_connection_status(False, getattr(self.parent(), 'is_server_connected', False))
+
+    def test_arduino(self, command):
+        """Testar comando do Arduino"""
+        if self.parent() and hasattr(self.parent(), 'arduino'):
+            arduino = self.parent().arduino
+            if arduino.is_connected:
+                if command == '1':
+                    arduino.open_audio()
+                else:
+                    arduino.cut_audio()
+            else:
+                 QMessageBox.warning(self, "Aviso", "Arduino desconectado! Conecte primeiro.")
+    
     def salvar_configuracoes(self):
         """Salva sessão e cores"""
         
@@ -797,6 +988,44 @@ class VereadoresAdminDialog(QDialog):
                 }
             """)
     
+    
+    def mover_cima(self):
+        """Mover item selecionado para cima"""
+        row = self.vereadores_list.currentRow()
+        if row > 0:
+            item = self.vereadores_list.takeItem(row)
+            self.vereadores_list.insertItem(row - 1, item)
+            self.vereadores_list.setCurrentRow(row - 1)
+            
+    def mover_baixo(self):
+        """Mover item selecionado para baixo"""
+        row = self.vereadores_list.currentRow()
+        if row < self.vereadores_list.count() - 1:
+            item = self.vereadores_list.takeItem(row)
+            self.vereadores_list.insertItem(row + 1, item)
+            self.vereadores_list.setCurrentRow(row + 1)
+            
+    def salvar_ordem_lista(self):
+        """Salva a nova ordem dos vereadores no JSON"""
+        nova_lista = []
+        for i in range(self.vereadores_list.count()):
+            item = self.vereadores_list.item(i)
+            # Recuperar o objeto vereador completo armazenado no item
+            vereador = item.data(Qt.ItemDataRole.UserRole)
+            nova_lista.append(vereador)
+            
+        self.vereadores = nova_lista
+        
+        # Salvar no arquivo
+        try:
+            with open(self.json_path, 'w', encoding='utf-8') as f:
+                json.dump(self.vereadores, f, indent=4, ensure_ascii=False)
+            
+            QMessageBox.information(self, "Sucesso", "Nova ordem salva com sucesso!")
+            self.vereadores_updated.emit() # Notificar janela principal para recarregar
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Erro ao salvar ordem: {e}")
+
     def load_vereadores(self):
         """Carregar vereadores do JSON"""
         try:
