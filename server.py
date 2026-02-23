@@ -220,7 +220,7 @@ def handle_timer_start(data):
 def handle_timer_stop():
     server_update_timer(False, False, system_state['timer']['total_seconds'])
 
-def run_server(host='127.0.0.1', port=5000, debug=False):
+def run_server(host='0.0.0.0', port=5000, debug=False):
     print(f"""
 ╔══════════════════════════════════════════════════════════════╗
 ║  🏛️  Sistema de Controle de Tribuna Parlamentar             ║

@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QFileDialog, QGroupBox, QFormLayout, QWidget, QInputDialog,
     QTabWidget, QColorDialog, QFrame, QScrollArea, QApplication,
-    QComboBox
+    QComboBox, QGridLayout, QSpinBox
 )
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QPixmap, QIcon, QColor, QFont
@@ -46,8 +46,25 @@ class VereadoresAdminDialog(QDialog):
         if not os.path.exists(self.presets_dir):
             os.makedirs(self.presets_dir)
         
+        # Detectar IP Local para exibir na UI
+        self.local_ip = self.get_local_ip()
+        
         self.init_ui()
         self.load_vereadores()
+        
+    def get_local_ip(self):
+        """Detecta o IP da máquina na rede local"""
+        try:
+            import socket
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(0.1)
+            # Não precisa conectar de fato, apenas para forçar a escolha da interface certa
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return "127.0.0.1"
         
     def update_json_path(self):
         """Atualiza caminho do JSON baseado na configuração"""
@@ -94,16 +111,17 @@ class VereadoresAdminDialog(QDialog):
             
         # Servidor
         if server_enabled:
-            self.websocket_status.setText("✅ WebSocket/API: Online")
+            ip_display = self.local_ip if hasattr(self, 'local_ip') else '127.0.0.1'
+            self.websocket_status.setText(f"✅ WebSocket/API: Online\nhttp://{ip_display}:5000")
             self.websocket_status.setStyleSheet("""
                 QLabel {
-                    font-size: 16px;
+                    font-size: 15px;
                     font-weight: bold;
                     color: #ffffff;
                     background-color: rgba(0, 242, 254, 0.4);
                     border: 1px solid #00f2fe;
                     border-radius: 8px;
-                    padding: 10px;
+                    padding: 8px;
                 }
             """)
         else:
@@ -524,6 +542,12 @@ class VereadoresAdminDialog(QDialog):
         self.session_input.setPlaceholderText("Ex: SESSÃO ORDINÁRIA 47")
         sessao_layout.addRow("Nome da Sessão:", self.session_input)
         
+        self.city_input = QLineEdit()
+        self.city_input.setObjectName("txtCityName")
+        self.city_input.setText(self.session_config.get_city_name())
+        self.city_input.setPlaceholderText("Ex: SINOP")
+        sessao_layout.addRow("Nome da Cidade:", self.city_input)
+        
         # Logo
         logo_layout = QHBoxLayout()
         self.logo_path_label = QLabel(self.session_config.get_logo() or "Nenhuma logo selecionada")
@@ -614,6 +638,27 @@ class VereadoresAdminDialog(QDialog):
         connections_group.setLayout(connections_layout)
         layout.addWidget(connections_group)
         
+        # --- SEÇÃO PRESETS DE TEMPO ---
+        presets_group = QGroupBox("⏱️ Presets de Tempo (Minutos)")
+        presets_layout = QGridLayout()
+        presets_layout.setSpacing(10)
+        
+        self.preset_inputs = []
+        current_presets = self.session_config.get_time_presets()
+        for i in range(6):
+            val = current_presets[i] if i < len(current_presets) else (i + 1)
+            inp = QSpinBox()
+            inp.setRange(1, 999)
+            inp.setValue(val)
+            inp.setSuffix(" min")
+            inp.setMinimumHeight(35)
+            presets_layout.addWidget(QLabel(f"Botão {i+1}:"), i // 3, (i % 3) * 2)
+            presets_layout.addWidget(inp, i // 3, (i % 3) * 2 + 1)
+            self.preset_inputs.append(inp)
+            
+        presets_group.setLayout(presets_layout)
+        layout.addWidget(presets_group)
+        
         # --- SEÇÃO CORES ---
         cores_group = QGroupBox("🎨 Identidade Visual (Lower Third)")
         cores_layout = QVBoxLayout()
@@ -671,12 +716,16 @@ class VereadoresAdminDialog(QDialog):
             return row, inp
 
         # Criar os seletores
-        self.row_primary, self.input_primary = create_color_row("Cor Primária (Nome):", 'primary', '#1e4586')
-        self.row_secondary, self.input_secondary = create_color_row("Cor Secundária (Info):", 'secondary', '#067b42')
-        self.row_bg, self.input_bg = create_color_row("Cor de Fundo (Sistema):", 'background', '#000000')
+        self.row_primary, self.input_primary = create_color_row("Cor Primária (Nome):", 'primary', '#10a37f')
+        self.row_secondary, self.input_secondary = create_color_row("Cor Secundária (Info):", 'secondary', '#1e4586')
+        self.row_text_primary, self.input_text_primary = create_color_row("Cor do Nome Orador:", 'text_primary', '#ffffff')
+        self.row_text_secondary, self.input_text_secondary = create_color_row("Cor demais Textos:", 'text_secondary', '#ffffff')
+        self.row_bg, self.input_bg = create_color_row("Cor de Fundo (Sistema):", 'background', '#1a1a2e')
         
         cores_layout.addLayout(self.row_primary)
         cores_layout.addLayout(self.row_secondary)
+        cores_layout.addLayout(self.row_text_primary)
+        cores_layout.addLayout(self.row_text_secondary)
         cores_layout.addLayout(self.row_bg)
         
         cores_group.setLayout(cores_layout)
@@ -806,10 +855,15 @@ class VereadoresAdminDialog(QDialog):
 
         print(f"DEBUG: Tentando salvar sessão: '{text}'")
         
-        # Salvar Sessão (Força Bruta para garantir escrita)
+        # Salvar Sessão e Cidade (Força Bruta para garantir escrita)
         from session_config import SessionConfig
         temp_conf = SessionConfig()
         temp_conf.set_session_name(text)
+        
+        # Buscar Nome da Cidade
+        input_city = self.findChild(QLineEdit, "txtCityName")
+        city_text = input_city.text().strip() if input_city else self.city_input.text().strip()
+        temp_conf.set_city_name(city_text)
         
         # Atualizar local
         self.session_config.load_config()
@@ -823,8 +877,14 @@ class VereadoresAdminDialog(QDialog):
         self.session_config.set_colors(
             self.input_primary.text(),
             self.input_secondary.text(),
+            self.input_text_primary.text(),
+            self.input_text_secondary.text(),
             self.input_bg.text()
         )
+        
+        # Salvar Presets de Tempo
+        new_presets = [inp.value() for inp in self.preset_inputs]
+        self.session_config.set_time_presets(new_presets)
         
         QMessageBox.information(self, "Sucesso", "Configurações salvas com sucesso!")
         self.session_updated.emit()

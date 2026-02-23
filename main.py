@@ -12,10 +12,11 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QLineEdit,
     QSpinBox, QGroupBox, QGridLayout, QMessageBox, QComboBox,
-    QFrame, QSizePolicy, QStackedWidget
+    QFrame, QSizePolicy, QStackedWidget, QMenu
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread
 from PySide6.QtGui import QFont, QIcon, QPalette, QColor, QPixmap
+import socket
 
 from arduino_controller import ArduinoController
 from admin_vereadores import VereadoresAdminDialog
@@ -96,9 +97,13 @@ class PainelPresidente(QMainWindow):
         # Estado Aparte
         self.is_active_aparte = False
         self.is_parte_mode = False # CORREÇÃO: Atributo faltante causava crash!
+        self.is_preparing_aparte = False # Aguardando seleção de tempo
         self.live_vereador = None  # Quem está realmente falando (na tela)
         self.main_speaker = None   # Orador principal (se houver aparte)
         self.aparte_speaker = None # Quem pediu aparte
+        
+        # UI Elements
+        self.preset_buttons = [] # Lista de (btn, seconds)
         
         # Controladores
         self.arduino = ArduinoController()
@@ -215,14 +220,14 @@ class PainelPresidente(QMainWindow):
         self.timer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.timer_label.setStyleSheet("""
             QLabel {
-                font-size: 120px;
+                font-size: 60px;
                 font-weight: bold;
                 color: #4facfe;
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 rgba(102, 126, 234, 0.1),
                     stop:1 rgba(118, 75, 162, 0.1));
                 border-radius: 15px;
-                padding: 20px;
+                padding: 10px;
             }
         """)
         layout.addWidget(self.timer_label, 2) # Peso 2 para crescer
@@ -242,30 +247,32 @@ class PainelPresidente(QMainWindow):
         """)
         layout.addWidget(self.status_label)
         
-        # Controles Principais (Gigantes)
-        controls_layout = QVBoxLayout() # Mudado para vertical para botões grandes empilhados ou Grid
-        controls_layout.setSpacing(15)
+        # Controles Principais
+        controls_layout = QVBoxLayout()
+        controls_layout.setSpacing(10)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
         
         # INICIAR
         self.play_btn = QPushButton("▶️ INICIAR")
         self.play_btn.clicked.connect(self.start_timer)
-        self.play_btn.setMinimumHeight(80)
+        self.play_btn.setMinimumHeight(90) 
+        self.play_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.play_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #11998e, stop:1 #38ef7d);
                 color: white;
-                font-size: 24px;
+                font-size: 28px; 
                 font-weight: 900;
                 border: none;
-                border-radius: 15px;
+                border-radius: 10px;
                 text-transform: uppercase;
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #0f877d, stop:1 #32d670);
-                margin-top: 2px;
+                margin-top: 1px;
             }
             QPushButton:disabled {
                 background: rgba(255, 255, 255, 0.1);
@@ -274,21 +281,23 @@ class PainelPresidente(QMainWindow):
         """)
         controls_layout.addWidget(self.play_btn)
         
-        # AJUSTE DE TEMPO (Adicionar/Remover usando o tempo selecionado)
+        # AJUSTE DE TEMPO (Adicionar/Remover)
         adjust_time_layout = QHBoxLayout()
+        adjust_time_layout.setSpacing(10)
         
         # Botão (-)
         self.btn_sub_time = QPushButton("-")
-        self.btn_sub_time.setMinimumHeight(60)
+        self.btn_sub_time.setMinimumHeight(80) 
+        self.btn_sub_time.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.btn_sub_time.clicked.connect(self.sub_time)
         self.btn_sub_time.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_sub_time.setStyleSheet("""
             QPushButton {
                 background: #c0392b;
                 color: white;
-                font-size: 32px;
+                font-size: 36px;
                 font-weight: bold;
-                border-radius: 12px;
+                border-radius: 10px;
             }
             QPushButton:hover { background: #e74c3c; }
         """)
@@ -296,16 +305,17 @@ class PainelPresidente(QMainWindow):
 
         # Botão (+)
         self.btn_add_time = QPushButton("+")
-        self.btn_add_time.setMinimumHeight(60)
+        self.btn_add_time.setMinimumHeight(80) 
+        self.btn_add_time.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.btn_add_time.clicked.connect(self.add_time)
         self.btn_add_time.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_add_time.setStyleSheet("""
             QPushButton {
                 background: #27ae60;
                 color: white;
-                font-size: 32px;
+                font-size: 36px;
                 font-weight: bold;
-                border-radius: 12px;
+                border-radius: 10px;
             }
             QPushButton:hover { background: #2ecc71; }
         """)
@@ -315,23 +325,24 @@ class PainelPresidente(QMainWindow):
         
         # Botões Pausar e Parar lado a lado
         sub_controls = QHBoxLayout()
-        sub_controls.setSpacing(15)
+        sub_controls.setSpacing(10)
         
         # PAUSAR
         self.pause_btn = QPushButton("⏸️ PAUSAR")
         self.pause_btn.clicked.connect(self.pause_timer)
         self.pause_btn.setEnabled(False)
-        self.pause_btn.setMinimumHeight(70)
+        self.pause_btn.setMinimumHeight(80) 
+        self.pause_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.pause_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.pause_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #f2994a, stop:1 #f2c94c);
                 color: white;
-                font-size: 18px;
+                font-size: 24px;
                 font-weight: bold;
                 border: none;
-                border-radius: 12px;
+                border-radius: 10px;
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -348,17 +359,18 @@ class PainelPresidente(QMainWindow):
         self.stop_btn = QPushButton("⏹️ PARAR")
         self.stop_btn.clicked.connect(self.stop_timer)
         self.stop_btn.setEnabled(False)
-        self.stop_btn.setMinimumHeight(70)
+        self.stop_btn.setMinimumHeight(80) 
+        self.stop_btn.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.stop_btn.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #cb2d3e, stop:1 #ef473a);
                 color: white;
-                font-size: 18px;
+                font-size: 24px;
                 font-weight: bold;
                 border: none;
-                border-radius: 12px;
+                border-radius: 10px;
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -373,19 +385,20 @@ class PainelPresidente(QMainWindow):
         
         controls_layout.addLayout(sub_controls)
         
-        # Botão de Aparte (Movido para cá)
+        # Botão de Aparte
         self.btn_aparte = QPushButton("🗣️ CONCEDER APARTE")
         self.btn_aparte.clicked.connect(self.conceder_aparte)
-        self.btn_aparte.setMinimumHeight(60)
+        self.btn_aparte.setMinimumHeight(80) 
+        self.btn_aparte.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Expanding)
         self.btn_aparte.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #e67e22, stop:1 #f39c12);
                 color: white;
                 font-weight: bold;
-                font-size: 16px;
+                font-size: 24px;
                 border-radius: 8px;
-                margin-top: 10px;
+                margin-top: 5px;
             }
             QPushButton:hover {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
@@ -400,7 +413,7 @@ class PainelPresidente(QMainWindow):
             }
         """)
         self.btn_aparte.setCheckable(False)
-        self.btn_aparte.setEnabled(False) # Habilitado apenas ao selecionar orador
+        self.btn_aparte.setEnabled(False)
         controls_layout.addWidget(self.btn_aparte)
         
         layout.addLayout(controls_layout)
@@ -408,48 +421,27 @@ class PainelPresidente(QMainWindow):
         layout.addSpacing(20)
         
         # Tempos pré-definidos (Grid menor)
-        presets_group = QGroupBox("Definir Tempo")
-        presets_layout = QGridLayout()
-        presets_layout.setSpacing(10)
+        self.presets_group = QGroupBox("Definir Tempo")
+        self.presets_layout = QGridLayout()
+        self.presets_layout.setSpacing(10)
         
-        presets = [
-            ("1 min", 60), ("3 min", 180), ("5 min", 300),
-            ("10 min", 600), ("15 min", 900), ("20 min", 1200)
-        ]
-        
-        for i, (label, seconds) in enumerate(presets):
-            btn = QPushButton(label)
-            btn.clicked.connect(lambda checked, s=seconds: self.set_time(s))
-            btn.setMinimumHeight(50)
-            btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(255, 255, 255, 0.1);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                    font-size: 16px;
-                }
-                QPushButton:hover {
-                    background: rgba(102, 126, 234, 0.3);
-                    border-color: #667eea;
-                }
-            """)
-            presets_layout.addWidget(btn, i // 3, i % 3)
+        self.rebuild_preset_buttons()
             
-        presets_group.setLayout(presets_layout)
-        layout.addWidget(presets_group)
+        self.presets_group.setLayout(self.presets_layout)
+        layout.addWidget(self.presets_group)
         
         # Botão Admin no final
         layout.addStretch()
         self.btn_admin = QPushButton("⚙️ ADMINISTRAR VEREADORES")
         self.btn_admin.clicked.connect(self.open_admin)
-        self.btn_admin.setMinimumHeight(60)
+        self.btn_admin.setMinimumHeight(45)
         self.btn_admin.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_admin.setStyleSheet("""
             QPushButton {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                     stop:0 #764ba2, stop:1 #667eea);
                 color: white;
-                font-size: 16px;
+                font-size: 14px;
                 font-weight: bold;
                 border: none;
                 border-radius: 10px;
@@ -849,6 +841,7 @@ class PainelPresidente(QMainWindow):
             
         # Habilitar botão de aparte
         self.update_aparte_button_state()
+        self.update_presets_state()
         
         # Enviar para Servidor (API)
         api_post('speaker', {'speaker': self.selected_vereador})
@@ -913,34 +906,70 @@ class PainelPresidente(QMainWindow):
             # MODO ENCERRAR
             self.btn_aparte.setText("🛑 ENCERRAR APARTE")
             self.btn_aparte.setEnabled(True)
-            self.btn_aparte.setStyleSheet("background-color: #c0392b; color: white; font-weight: bold; font-size: 14px;")
+            self.btn_aparte.setStyleSheet("background-color: #c0392b; color: white; font-weight: bold; font-size: 24px; min-height: 80px;")
+            
+            # Bloquear botão PARAR geral durante o aparte
+            self.stop_btn.setEnabled(False)
+        elif self.is_preparing_aparte:
+            # MODO CANCELAR SELEÇÃO
+            self.btn_aparte.setText("❌ CANCELAR APARTE")
+            self.btn_aparte.setEnabled(True)
+            self.btn_aparte.setStyleSheet("background-color: #34495e; color: white; font-weight: bold; font-size: 24px; min-height: 80px;")
         elif self.is_running and self.selected_vereador and self.live_vereador:
             # Só permite aparte se o selecionado for diferente do que está falando ao vivo
             if self.selected_vereador['nome'] != self.live_vereador['nome']:
                 self.btn_aparte.setText("🗣️ CONCEDER APARTE")
                 self.btn_aparte.setEnabled(True)
-                self.btn_aparte.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold; font-size: 14px;")
+                self.btn_aparte.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold; font-size: 24px; min-height: 80px;")
             else:
                 self.btn_aparte.setText("🗣️ CONCEDER APARTE")
                 self.btn_aparte.setEnabled(False)
-                self.btn_aparte.setStyleSheet("background-color: #3e3e3e; color: #888; font-weight: bold; font-size: 14px;")
+                self.btn_aparte.setStyleSheet("background-color: #3e3e3e; color: #888; font-weight: bold; font-size: 24px; min-height: 80px;")
         else:
             self.btn_aparte.setText("🗣️ CONCEDER APARTE")
             self.btn_aparte.setEnabled(False)
-            self.btn_aparte.setStyleSheet("background-color: #3e3e3e; color: #888; font-weight: bold; font-size: 14px;")
+            self.btn_aparte.setStyleSheet("background-color: #3e3e3e; color: #888; font-weight: bold; font-size: 24px; min-height: 80px;")
     
     def set_time(self, seconds):
-        """Definir tempo"""
+        """Definir tempo (Normal ou Aparte)"""
+        if self.is_preparing_aparte:
+            # Lógica de Aparte: Iniciar imediatamente com o tempo selecionado
+            self.is_preparing_aparte = False
+            self.executar_conceder_aparte(seconds)
+            self.update_presets_state() # Volta ao normal
+            return
+
         if self.is_running:
-            # Se estiver rodando, apenas prepara o tempo para usar depois (Aparte)
+            # Se estiver rodando, apenas prepara o tempo para usar depois
             self.staged_seconds = seconds
             self.status_label.setText(f"⏱️ Tempo {seconds//60}min preparado")
-            # Não para o timer!
         else:
             self.total_seconds = seconds
             self.remaining_seconds = seconds
             self.staged_seconds = seconds # Sincroniza
             self.update_display()
+
+    def update_presets_state(self):
+        """Habilitar/Desabilitar botões de tempo com base no contexto"""
+        if self.is_preparing_aparte:
+            # Modo Preparação de Aparte: Desabilita tempos maiores que o restante do orador
+            for btn, seconds in self.preset_buttons:
+                if seconds > self.remaining_seconds:
+                    btn.setEnabled(False)
+                else:
+                    btn.setEnabled(True)
+        elif self.is_running and not self.is_parte_mode:
+             # Se está rodando normal, pode clicar para "preparar" próximo tempo (staged)
+             for btn, seconds in self.preset_buttons:
+                 btn.setEnabled(True)
+        elif self.is_parte_mode:
+             # Em aparte não pode mudar o tempo do aparte no meio dele via preset
+             for btn, seconds in self.preset_buttons:
+                 btn.setEnabled(False)
+        else:
+            # Repouso: Tudo liberado
+            for btn, seconds in self.preset_buttons:
+                btn.setEnabled(True)
     
     def set_custom_time(self):
         """Definir tempo customizado"""
@@ -1038,10 +1067,12 @@ class PainelPresidente(QMainWindow):
         """)
         self.play_btn.setEnabled(False)
         self.pause_btn.setEnabled(True)
-        self.stop_btn.setEnabled(True)
+        # Botão Parar só é habilitado se NÃO estiver em modo aparte
+        self.stop_btn.setEnabled(not self.is_parte_mode)
         
-        # Atualizar estado do botão de aparte
+        # Atualizar estado do botão de aparte e presets
         self.update_aparte_button_state()
+        self.update_presets_state()
         
         # Enviar para Servidor (API)
         api_post('timer', {'action': 'start', 'remaining': self.remaining_seconds, 'total': self.total_seconds})
@@ -1089,22 +1120,44 @@ class PainelPresidente(QMainWindow):
         msg.exec()
 
     def conceder_aparte(self):
-        """Conceder aparte para o vereador selecionado"""
+        """Alternar modo de preparação de aparte (Sinaliza para usar os presets)"""
         # Se já estiver em modo aparte, o botão serve para ENCERRAR
         if self.is_parte_mode:
             self.encerrar_aparte()
             return
 
         if not self.selected_vereador:
+             return
+
+        if not self.live_vereador or self.remaining_seconds <= 0:
+             QMessageBox.warning(self, "Aparte não permitido", "O orador principal não possui tempo disponível para conceder aparte.")
+             return
+
+        # Toggle no modo de preparação
+        self.is_preparing_aparte = not self.is_preparing_aparte
+        
+        # Atualizar Visual
+        self.update_aparte_button_state()
+        self.update_presets_state()
+        
+        if self.is_preparing_aparte:
+             # Pequeno aviso sonoro ou visual de instrução poderia ir aqui
+             self.status_label.setText("🗣️ SELECIONE O TEMPO DO APARTE")
+             self.status_label.setStyleSheet("background-color: #f39c12; color: white; font-weight: bold; border-radius: 20px; padding: 10px;")
+        else:
+             # Cancelou
+             self.status_label.setText("▶️ Em Execução")
+             self.status_label.setStyleSheet("background-color: rgba(0, 242, 254, 0.2); color: #00f2fe; border-radius: 20px; padding: 10px;")
+
+    def executar_conceder_aparte(self, tempo_segundos):
+        """Lógica interna de ativação do modo aparte"""
+        if not self.selected_vereador or not self.live_vereador:
             return
             
         # Lógica de Modo Aparte
         # O orador que estava falando (live_vereador) vira o concedente
         # O selecionado (selected_vereador) vira o receptor
         
-        if not self.live_vereador:
-             self.live_vereador = self.selected_vereador # Fallback
-             
         self.is_parte_mode = True
         self.concedente = self.live_vereador
         self.receptor = self.selected_vereador
@@ -1120,17 +1173,11 @@ class PainelPresidente(QMainWindow):
         self._stop_timer_internal(reset_ui=False) 
         self.is_parte_mode = True 
         
-        print(f"DEBUG: Modo Aparte ativado. Concedente: {self.concedente.get('nome')} -> Receptor: {self.receptor.get('nome')}")
+        print(f"DEBUG: Modo Aparte ativado. Concedente: {self.concedente.get('nome')} -> Receptor: {self.receptor.get('nome')} | Tempo: {tempo_segundos}s")
         self.update_speaker_panel()
 
-        # Configurar tempo de aparte (Limitado ao tempo do orador principal)
-        tempo_aparte_padrao = 2 * 60 
-        
-        # Se o orador tiver menos tempo que o aparte padrão, limitar
-        if self.saved_main_seconds > 0 and tempo_aparte_padrao > self.saved_main_seconds:
-            tempo_aparte = self.saved_main_seconds
-        else:
-            tempo_aparte = tempo_aparte_padrao
+        # Configurar tempo de aparte (Já validado pelo menu, mas capar por segurança)
+        tempo_aparte = min(tempo_segundos, self.saved_main_seconds)
             
         self.aparte_total_seconds = tempo_aparte # Salvar para cálculo de desconto
         self.set_time(tempo_aparte)
@@ -1139,8 +1186,9 @@ class PainelPresidente(QMainWindow):
         # Mas mantemos a referencia do concedente visualmente
         self.live_vereador = self.receptor
         
-        # Enviar para a tela do plenário se necessário (ainda mostra só um, mas com flag de aparte)
+        # Sincronizar com tela do plenário e API
         self.sync_tela_plenario()
+        api_post('speaker', {'speaker': self.live_vereador})
         
         # Iniciar cronômetro automaticamente para o aparte
         self.start_timer()
@@ -1198,6 +1246,7 @@ class PainelPresidente(QMainWindow):
         
         # Sincronizar (volta ao normal)
         self.sync_tela_plenario()
+        api_post('speaker', {'speaker': self.live_vereador})
 
         # Retomar contagem automaticamente (devolver a palavra)
         if self.remaining_seconds > 0:
@@ -1229,6 +1278,7 @@ class PainelPresidente(QMainWindow):
         """)
         self.play_btn.setEnabled(True)
         self.pause_btn.setEnabled(False)
+        self.update_presets_state()
         
         # Enviar para Servidor (API)
         api_post('timer', {'action': 'pause', 'remaining': self.remaining_seconds})
@@ -1278,6 +1328,7 @@ class PainelPresidente(QMainWindow):
         self.pause_btn.setEnabled(False)
         self.stop_btn.setEnabled(False)
         self.btn_aparte.setEnabled(False)
+        self.update_presets_state()
         
         # Enviar para Servidor (API)
         api_post('timer', {'action': 'stop', 'total': self.total_seconds})
@@ -1300,15 +1351,29 @@ class PainelPresidente(QMainWindow):
             # Sincronizar com tela do plenário
             self.sync_tela_plenario()
             
+            # Se estiver preparando aparte, atualizar botões (devido ao decréscimo de tempo)
+            if self.is_preparing_aparte:
+                self.update_presets_state()
+            
             # Verificar se chegou a zero
             if self.remaining_seconds == 0:
                 self.on_time_up()
     
     def on_time_up(self):
         """Tempo esgotado"""
+        if self.is_parte_mode:
+            # Se for aparte, encerramos o aparte e voltamos pro principal
+            self.encerrar_aparte()
+            # Se após encerrar o principal também estiver zerado, mostramos aviso
+            if self.remaining_seconds <= 0:
+                 self.mostrar_aviso_tempo_esgotado()
+            return
+
         self.stop_timer()
-        
-        # Mostrar Aviso "TEMPO ESGOTADO" no lugar do timer
+        self.mostrar_aviso_tempo_esgotado()
+
+    def mostrar_aviso_tempo_esgotado(self):
+        """Mostrar Aviso 'TEMPO ESGOTADO' no lugar do timer"""
         self.timer_label.setText("TEMPO\nESGOTADO")
         self.timer_label.setStyleSheet("""
             QLabel {
@@ -1343,7 +1408,7 @@ class PainelPresidente(QMainWindow):
              # Modo Aparte: Amarelo
              self.timer_label.setStyleSheet("""
                 QLabel {
-                    font-size: 100px;
+                    font-size: 60px;
                     font-weight: bold;
                     color: #fceabb;
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -1359,7 +1424,7 @@ class PainelPresidente(QMainWindow):
              # Danger Zone: Vermelho
              self.timer_label.setStyleSheet("""
                 QLabel {
-                    font-size: 100px;
+                    font-size: 60px;
                     font-weight: bold;
                     color: #e74c3c;
                     background: rgba(231, 76, 60, 0.1);
@@ -1373,7 +1438,7 @@ class PainelPresidente(QMainWindow):
              # Warning Zone: Amarelo/Laranja
              self.timer_label.setStyleSheet("""
                 QLabel {
-                    font-size: 100px;
+                    font-size: 60px;
                     font-weight: bold;
                     color: #f39c12;
                     background: rgba(243, 156, 18, 0.1);
@@ -1387,7 +1452,7 @@ class PainelPresidente(QMainWindow):
              # Normal: Azul
              self.timer_label.setStyleSheet("""
                 QLabel {
-                    font-size: 100px;
+                    font-size: 60px;
                     font-weight: bold;
                     color: #4facfe;
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
@@ -1468,24 +1533,58 @@ class PainelPresidente(QMainWindow):
         worker.start()
 
     def _verify_server_sync(self):
+        """Ping interno para verificar se o servidor está respondendo, ignorando proxies do Windows"""
         try:
-            # Aumentando timeout para evitar falso negativo em redes lentas ou Wi-Fi
-            url = "http://127.0.0.1:5000/api/config"
-            with urllib.request.urlopen(url, timeout=3) as response:
-                 # Callback seguro para thread principal (apenas se 200 OK)
-                 if response.status == 200:
+            import urllib.request
+            # Criar um opener que ignora completamente as configurações de proxy do sistema
+            # Isso evita que o Windows tente rotear requisições de localhost para um proxy
+            proxy_handler = urllib.request.ProxyHandler({})
+            opener = urllib.request.build_opener(proxy_handler)
+            url = "http://127.0.0.1:5000/api/state"
+            
+            with opener.open(url, timeout=1.0) as response:
+                if response.status == 200:
                     QTimer.singleShot(0, lambda: self.update_server_status(True))
-                 else:
+                else:
                     QTimer.singleShot(0, lambda: self.update_server_status(False))
-        except Exception as e:
-                 # print(f"Erro ping server: {e}") # Debug opcional
-                 QTimer.singleShot(0, lambda: self.update_server_status(False))
+        except Exception:
+            # Em caso de erro (ex: servidor ainda subindo), marca como offline
+            QTimer.singleShot(0, lambda: self.update_server_status(False))
 
     def update_server_status(self, connected):
-        """Atualizar UI do status do Servidor"""
+        """Atualizar UI do status do Servidor no painel principal e no admin"""
         self.is_server_connected = connected
         
-        # Atualizar Admin se estiver aberto
+        # 1. Atualizar label no painel principal (se existir)
+        if hasattr(self, 'server_status_label'):
+            if connected:
+                self.server_status_label.setText("✅ Servidor: Online")
+                self.server_status_label.setStyleSheet("""
+                    QLabel {
+                        font-size: 14px;
+                        font-weight: bold;
+                        color: #ffffff;
+                        background-color: rgba(0, 242, 254, 0.4);
+                        border: 1px solid #00f2fe;
+                        border-radius: 8px;
+                        padding: 8px;
+                    }
+                """)
+            else:
+                self.server_status_label.setText("❌ Servidor: Offline")
+                self.server_status_label.setStyleSheet("""
+                    QLabel {
+                        font-size: 14px;
+                        font-weight: bold;
+                        color: #ffffff;
+                        background-color: rgba(250, 112, 154, 0.4);
+                        border: 1px solid #fa709a;
+                        border-radius: 8px;
+                        padding: 8px;
+                    }
+                """)
+        
+        # 2. Atualizar Admin se estiver aberto
         if self.admin_dialog and self.admin_dialog.isVisible():
             is_arduino = getattr(self, 'is_arduino_connected', False)
             self.admin_dialog.update_connection_status(is_arduino, connected)
@@ -1542,9 +1641,18 @@ class PainelPresidente(QMainWindow):
     
     def on_session_updated(self):
         """Callback quando sessão é atualizada"""
+        # Recarregar configuração local
+        self.session_config.load_config()
+        
+        # Atualizar presets de tempo na UI
+        self.rebuild_preset_buttons()
+        self.update_presets_state() # Garantir estado habilitado/desabilitado correto
+
         if self.tela_plenario:
             # Recarregar configuração da sessão
             self.tela_plenario.session_config.load_config()
+            # Atualizar Topo (Header)
+            self.tela_plenario.update_header()
             # Se ainda não iniciou, atualizar tela
             if not self.tela_plenario.timer_started:
                 self.tela_plenario.show_session_info()
@@ -1552,6 +1660,46 @@ class PainelPresidente(QMainWindow):
         
         # Avisar clientes web (Lower Third)
         api_post('config_update', {})
+
+    def rebuild_preset_buttons(self):
+        """Reconstruir os botões de preset com base na configuração"""
+        # Limpar layout anterior se houver
+        while self.presets_layout.count():
+            item = self.presets_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        # Carregar presets da configuração
+        time_presets_min = self.session_config.get_time_presets()
+        
+        self.preset_buttons = []
+        for i, minutes in enumerate(time_presets_min):
+            seconds = minutes * 60
+            label = f"{minutes} min"
+            
+            btn = QPushButton(label)
+            btn.clicked.connect(lambda checked, s=seconds: self.set_time(s))
+            btn.setMinimumHeight(70)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    font-size: 22px;
+                }
+                QPushButton:hover {
+                    background: rgba(102, 126, 234, 0.3);
+                    border-color: #667eea;
+                }
+                QPushButton:disabled {
+                    background: rgba(255, 255, 255, 0.05);
+                    color: #444;
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                }
+            """)
+            self.presets_layout.addWidget(btn, i // 3, i % 3)
+            self.preset_buttons.append((btn, seconds))
     
     def open_tela_plenario(self):
         """Abrir tela do plenário (Monitor 2)"""

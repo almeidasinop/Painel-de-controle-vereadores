@@ -15,7 +15,8 @@
             /* Verde Sinop */
             --secondary-color: #5B76A7;
             /* Azul Sinop */
-            --text-color: #FFFFFF;
+            --text-primary: #FFFFFF;
+            --text-secondary: #FFFFFF;
         }
 
         body {
@@ -74,7 +75,7 @@
         .bar {
             display: flex;
             align-items: center;
-            color: var(--text-color);
+            color: var(--text-secondary);
             padding-left: 170px;
             /* Espaço para o brasão que está por cima */
             padding-right: 40px;
@@ -108,6 +109,7 @@
             font-weight: 900;
             text-transform: uppercase;
             letter-spacing: -1px;
+            color: var(--text-primary);
         }
 
         /* Barra Inferior: Site */
@@ -175,6 +177,8 @@
                 .then(colors => {
                     if (colors.primary) document.documentElement.style.setProperty('--primary-color', colors.primary);
                     if (colors.secondary) document.documentElement.style.setProperty('--secondary-color', colors.secondary);
+                    if (colors.text_primary) document.documentElement.style.setProperty('--text-primary', colors.text_primary);
+                    if (colors.text_secondary) document.documentElement.style.setProperty('--text-secondary', colors.text_secondary);
                 })
                 .catch(err => console.error("Erro ao carregar cores:", err));
         }

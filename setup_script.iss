@@ -2,7 +2,7 @@
 ; Instala o Painel de Controle e o Driver USB CH340
 
 #define MyAppName "Painel de Controle Tribuna"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.1"
 #define MyAppPublisher "Camara Municipal"
 #define MyAppExeName "PainelControle.exe"
 
@@ -17,7 +17,7 @@ DefaultDirName={autopf}\{#MyAppName}
 DisableProgramGroupPage=yes
 ; Uncomment the following line to run in non administrative install mode (install for current user only.)
 ;PrivilegesRequired=lowest
-OutputBaseFilename=Instalador_PainelTribuna_v1.0
+OutputBaseFilename=Instalador_PainelTribuna_v1.1
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -31,19 +31,23 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "startupicon"; Description: "Iniciar automaticamente com o Windows"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
+; O driver USB deve ser copiado explicitamente para garantir que esteja disponivel
+Source: "CH34x_Install_Windows_v3_4.EXE"; DestDir: "{app}"; Flags: ignoreversion
+
+; Copiar o icone para a raiz para facilitar o acesso dos atalhos
+Source: "fotos\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+
 ; O executavel principal e todos os arquivos gerados pelo PyInstaller
 Source: "dist\PainelControle\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{autostartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\icon.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\icon.ico"
+Name: "{autostartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startupicon; IconFilename: "{app}\icon.ico"
 
 [Run]
 ; Executa o instalador do driver SILENCIOSAMENTE ou INTERATIVAMENTE
-; O parametro /S costuma ser silent install em alguns installers, mas CH340 as vezes varia.
-; Vamos rodar normal para garantir que o usuario veja e instale.
 Filename: "{app}\CH34x_Install_Windows_v3_4.EXE"; Description: "Instalar Driver USB (Necessario para Arduino)"; Flags: postinstall waituntilterminated runascurrentuser
 
 ; Opção para iniciar o sistema logo após instalar

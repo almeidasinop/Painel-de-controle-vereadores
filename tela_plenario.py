@@ -176,10 +176,10 @@ class TelaPlenario(QMainWindow):
         # Capitalizar primeira letra
         date_str = date_str[0].upper() + date_str[1:] if date_str else ""
         
-        # Sessão
+        # Sessão (Pega o nome definido pelo admin)
         session_name = ""
         if hasattr(self, 'session_config'):
-             session_name = self.session_config.get_session_number() or "SESSÃO"
+             session_name = self.session_config.get_session_name() or "SESSÃO"
         else:
              session_name = "SESSÃO"
         
@@ -454,7 +454,11 @@ class TelaPlenario(QMainWindow):
         
         if session_number:
             self.nome_label.setText(session_number)
-            self.partido_label.setText("CÂMARA MUNICIPAL")
+            
+            city_name = self.session_config.get_city_name()
+            partido_text = f"CÂMARA MUNICIPAL DE {city_name}" if city_name else "CÂMARA MUNICIPAL"
+            
+            self.partido_label.setText(partido_text)
             self.partido_label.setStyleSheet("""
                 QLabel {
                     font-size: 40px;
@@ -465,7 +469,8 @@ class TelaPlenario(QMainWindow):
                 }
             """)
         else:
-            self.nome_label.setText("CÂMARA MUNICIPAL")
+            city_name = self.session_config.get_city_name()
+            self.nome_label.setText(f"CÂMARA MUNICIPAL DE {city_name}" if city_name else "CÂMARA MUNICIPAL")
             self.partido_label.setText("")
     
     def show_vereador_info(self):
