@@ -52,10 +52,22 @@ def get_session_logo():
         config = SessionConfig()
         logo_path = config.get_logo()
         
-        if logo_path and os.path.exists(logo_path):
-            return send_file(logo_path)
-        else:
+        if logo_path:
+            # Se for caminho relativo, converter para absoluto nos dados do usuário
+            if not os.path.isabs(logo_path):
+                abs_path = config.get_data_path(logo_path)
+                if os.path.exists(abs_path):
+                    return send_file(abs_path)
+                # Tentar bundle se não estiver em dados
+                abs_path = config.get_bundle_path(logo_path)
+                if os.path.exists(abs_path):
+                    return send_file(abs_path)
+            elif os.path.exists(logo_path):
+                return send_file(logo_path)
+                
             return "Logo não encontrada", 404
+        else:
+            return "Logo não definida", 404
     except Exception as e:
         return str(e), 500
 
@@ -75,12 +87,21 @@ def get_session_colors():
     return jsonify(config.get_colors())
 
 def load_vereadores():
-    """Carrega lista de vereadores do JSON"""
-    json_path = os.path.join(os.path.dirname(__file__), 'vereadores.json')
+    """Carrega lista de vereadores do JSON (usa AppData)"""
+    config = SessionConfig()
+    active_list = config.get_active_list()
+    json_path = config.get_data_path(active_list)
     try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except FileNotFoundError:
+        if os.path.exists(json_path):
+            with open(json_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        # Tentar bundle como fallback
+        json_path = config.get_bundle_path(active_list)
+        if os.path.exists(json_path):
+             with open(json_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return []
+    except Exception:
         return []
 
 @app.route('/')

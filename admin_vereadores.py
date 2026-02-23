@@ -35,16 +35,13 @@ class VereadoresAdminDialog(QDialog):
         # Caminho da lista vem da configuração
         self.update_json_path()
         
-        self.fotos_dir = os.path.join(os.path.dirname(__file__), 'fotos')
+        # Obter caminhos persistentes do SessionConfig
+        self.fotos_dir = self.session_config.get_data_path('fotos')
+        self.presets_dir = self.session_config.get_data_path('presets')
         
-        # Criar diretório de fotos se não existir
-        if not os.path.exists(self.fotos_dir):
-            os.makedirs(self.fotos_dir)
-            
-        # Criar diretório de presets se não existir
-        self.presets_dir = os.path.join(os.path.dirname(__file__), 'presets')
-        if not os.path.exists(self.presets_dir):
-            os.makedirs(self.presets_dir)
+        # Garantir diretórios (SessionConfig já cria, mas por segurança)
+        os.makedirs(self.fotos_dir, exist_ok=True)
+        os.makedirs(self.presets_dir, exist_ok=True)
         
         # Detectar IP Local para exibir na UI
         self.local_ip = self.get_local_ip()
@@ -67,9 +64,9 @@ class VereadoresAdminDialog(QDialog):
             return "127.0.0.1"
         
     def update_json_path(self):
-        """Atualiza caminho do JSON baseado na configuração"""
+        """Atualiza caminho do JSON baseado na configuração (usa AppData)"""
         relative_path = self.session_config.get_active_list()
-        self.json_path = os.path.join(os.path.dirname(__file__), relative_path)
+        self.json_path = self.session_config.get_data_path(relative_path)
         
         # Garantir que o diretório existe
         os.makedirs(os.path.dirname(self.json_path), exist_ok=True)
@@ -1032,7 +1029,7 @@ class VereadoresAdminDialog(QDialog):
 
     def set_placeholder_photo(self):
         """Define uma imagem de placeholder para a foto do vereador."""
-        placeholder_path = os.path.join(os.path.dirname(__file__), 'assets', 'placeholder_vereador.png')
+        placeholder_path = self.session_config.get_bundle_path(os.path.join('assets', 'placeholder_vereador.png'))
         if os.path.exists(placeholder_path):
             pixmap = QPixmap(placeholder_path)
             self.foto_label.setPixmap(pixmap.scaled(200, 200, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
@@ -1118,8 +1115,15 @@ class VereadoresAdminDialog(QDialog):
         
         # Carregar foto e manter referência
         if self.current_vereador.get('foto'):
-            self.selected_foto_path = self.current_vereador['foto']  # Manter foto atual
-            foto_path = os.path.join(os.path.dirname(__file__), self.current_vereador['foto'])
+            # Manter foto atual
+            current_foto = self.current_vereador['foto']
+            self.selected_foto_path = current_foto  
+            
+            # Tentar primeiro em AppData, depois no Bundle
+            foto_path = self.session_config.get_data_path(current_foto)
+            if not os.path.exists(foto_path):
+                foto_path = self.session_config.get_bundle_path(current_foto)
+                
             if os.path.exists(foto_path):
                 pixmap = QPixmap(foto_path)
                 self.foto_label.setPixmap(pixmap.scaled(150, 150, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
@@ -1295,7 +1299,7 @@ class VereadoresAdminDialog(QDialog):
             if file_path:
                 import shutil
                 filename = os.path.basename(file_path)
-                dest_path = os.path.join(os.path.dirname(__file__), 'fotos', filename)
+                dest_path = self.session_config.get_data_path(os.path.join('fotos', filename))
                 shutil.copy2(file_path, dest_path)
                 logo_path_var[0] = dest_path
                 logo_label.setText(f"Logo selecionado: {filename}")

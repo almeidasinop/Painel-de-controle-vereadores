@@ -4,27 +4,66 @@ Configuração de Sessão - Logo e Número da Sessão
 
 import json
 import os
+import sys
+import shutil
 
 class SessionConfig:
     """Gerenciador de configuração da sessão"""
     
     def __init__(self):
-        # Definir diretório de dados do usuário (AppData/Local)
+        # 1. Definir base do bundle (Leitura - PyInstaller)
+        if hasattr(sys, '_MEIPASS'):
+            self.base_bundle_path = sys._MEIPASS
+        else:
+            self.base_bundle_path = os.path.dirname(os.path.abspath(__file__))
+
+        # 2. Definir diretório de dados do usuário (Escrita - AppData/Local)
         app_data = os.getenv('LOCALAPPDATA')
         if not app_data:
             app_data = os.path.expanduser('~')
             
         self.config_dir = os.path.join(app_data, 'PainelControleTribuna')
         
-        # Criar diretório se não existir
+        # Criar diretório base se não existir
         if not os.path.exists(self.config_dir):
             try:
-                os.makedirs(self.config_dir)
+                os.makedirs(self.config_dir, exist_ok=True)
             except OSError as e:
                 print(f"Erro ao criar diretório de configuração: {e}")
+        
+        # 3. Inicializar estrutura de pastas (fotos, presets)
+        self.initialize_data_structure()
             
         self.config_path = os.path.join(self.config_dir, 'session_config.json')
         self.load_config()
+
+    def initialize_data_structure(self):
+        """Copia arquivos padrão do bundle para a pasta de dados se não existirem"""
+        # Pastas necessárias
+        folders = ['fotos', 'presets']
+        for folder in folders:
+            target_path = os.path.join(self.config_dir, folder)
+            if not os.path.exists(target_path):
+                source_path = os.path.join(self.base_bundle_path, folder)
+                if os.path.exists(source_path):
+                    try:
+                        shutil.copytree(source_path, target_path, dirs_exist_ok=True)
+                        print(f"DEBUG: Pasta {folder} copiada para {target_path}")
+                    except Exception as e:
+                        print(f"Erro ao copiar pasta {folder}: {e}")
+                else:
+                    os.makedirs(target_path, exist_ok=True)
+
+        # Arquivo de vereadores padrão (vereadores.json na raiz do bundle)
+        target_vereadores = os.path.join(self.config_dir, 'vereadores.json')
+        if not os.path.exists(target_vereadores):
+            source_vereadores = os.path.join(self.base_bundle_path, 'vereadores.json')
+            if os.path.exists(source_vereadores):
+                try:
+                    shutil.copy2(source_vereadores, target_vereadores)
+                    print(f"DEBUG: Arquivo vereadores.json copiado para {target_vereadores}")
+                except Exception as e:
+                    print(f"Erro ao copiar vereadores.json: {e}")
     
     def load_config(self):
         """Carregar configuração"""
@@ -161,3 +200,15 @@ class SessionConfig:
     def get_time_presets(self):
         """Obter presets de tempo"""
         return self.time_presets
+
+    def get_data_path(self, relative_path=None):
+        """Retorna o caminho absoluto na pasta de dados do usuário"""
+        if not relative_path:
+            return self.config_dir
+        return os.path.join(self.config_dir, relative_path)
+
+    def get_bundle_path(self, relative_path=None):
+        """Retorna o caminho absoluto na pasta do bundle (somente leitura)"""
+        if not relative_path:
+            return self.base_bundle_path
+        return os.path.join(self.base_bundle_path, relative_path)

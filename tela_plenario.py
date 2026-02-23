@@ -226,7 +226,12 @@ class TelaPlenario(QMainWindow):
             
             # Carregar foto
             if vereador.get('foto'):
-                foto_path = os.path.join(os.path.dirname(__file__), vereador['foto'])
+                foto_rel = vereador['foto']
+                # Tentar primeiro em AppData, depois no Bundle
+                foto_path = self.session_config.get_data_path(foto_rel)
+                if not os.path.exists(foto_path):
+                    foto_path = self.session_config.get_bundle_path(foto_rel)
+                
                 if os.path.exists(foto_path):
                     pixmap = QPixmap(foto_path)
                     # Escalar para o tamanho do widget (320x320)
@@ -427,13 +432,24 @@ class TelaPlenario(QMainWindow):
         
         # Carregar logo se existir
         logo_path = self.session_config.get_logo()
-        if logo_path and os.path.exists(logo_path):
-            pixmap = QPixmap(logo_path)
-            # Escalar mantendo aspecto, sem cortes
-            self.foto_label.setPixmap(
-                pixmap.scaled(450, 450, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-            )
-            self.foto_label.setStyleSheet("border: none; background: transparent;")
+        if logo_path:
+            # Tentar resolver caminho se for relativo
+            if not os.path.isabs(logo_path):
+                abs_logo = self.session_config.get_data_path(logo_path)
+                if not os.path.exists(abs_logo):
+                    abs_logo = self.session_config.get_bundle_path(logo_path)
+                logo_path = abs_logo
+                
+            if os.path.exists(logo_path):
+                pixmap = QPixmap(logo_path)
+                # Escalar mantendo aspecto, sem cortes
+                self.foto_label.setPixmap(
+                    pixmap.scaled(450, 450, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                )
+                self.foto_label.setStyleSheet("border: none; background: transparent;")
+            else:
+                self.foto_label.setText("🏛️")
+                self.foto_label.setStyleSheet("border: none; background: transparent; font-size: 250px; color: rgba(255, 255, 255, 0.5);")
         else:
             self.foto_label.setText("🏛️")
             self.foto_label.setStyleSheet("border: none; background: transparent; font-size: 250px; color: rgba(255, 255, 255, 0.5);")

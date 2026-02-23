@@ -24,13 +24,16 @@ def setup_logger(process_name="app"):
     Configura o sistema de log para salvar em arquivo na pasta `logs`.
     Redireciona stdout e stderr para o log.
     """
-    # 1. Criar diretório de logs
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    logs_dir = os.path.join(base_dir, 'logs')
+    # 1. Criar diretório de logs no AppData (Escrita permitida)
+    app_data = os.getenv('LOCALAPPDATA')
+    if not app_data:
+        app_data = os.path.expanduser('~')
+        
+    logs_dir = os.path.join(app_data, 'PainelControleTribuna', 'logs')
     
     if not os.path.exists(logs_dir):
         try:
-            os.makedirs(logs_dir)
+            os.makedirs(logs_dir, exist_ok=True)
         except OSError as e:
             print(f"Erro ao criar diretório de logs: {e}")
             return

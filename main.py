@@ -183,8 +183,14 @@ class PainelPresidente(QMainWindow):
         self.setMinimumSize(1400, 800)
         
         # Icone da Janela
-        if os.path.exists(os.path.join(os.path.dirname(__file__), "fotos", "logo.png")):
-             self.setWindowIcon(QIcon(os.path.join(os.path.dirname(__file__), "fotos", "logo.png")))
+        icon_path = self.session_config.get_data_path(os.path.join("fotos", "logo.png"))
+        if os.path.exists(icon_path):
+             self.setWindowIcon(QIcon(icon_path))
+        else:
+            # Tentar bundle se não estiver em dados (primeira execução)
+            bundle_icon = self.session_config.get_bundle_path(os.path.join("fotos", "logo.png"))
+            if os.path.exists(bundle_icon):
+                self.setWindowIcon(QIcon(bundle_icon))
         
         # Widget central
         central_widget = QWidget()
@@ -747,7 +753,7 @@ class PainelPresidente(QMainWindow):
             session_config = SessionConfig()
             active_list = session_config.get_active_list()
             
-            json_path = os.path.join(os.path.dirname(__file__), active_list)
+            json_path = session_config.get_data_path(active_list)
             
             if os.path.exists(json_path):
                 with open(json_path, 'r', encoding='utf-8') as f:
@@ -778,7 +784,12 @@ class PainelPresidente(QMainWindow):
                 
                 # Adicionar foto como ícone
                 if vereador.get('foto'):
-                    foto_path = os.path.join(os.path.dirname(__file__), vereador['foto'])
+                    # Tentar primeiro na pasta de dados do usuário (onde fotos novas são salvas)
+                    foto_path = self.session_config.get_data_path(vereador['foto'])
+                    if not os.path.exists(foto_path):
+                        # Tentar no bundle (fotos originais que vieram com o instalador)
+                        foto_path = self.session_config.get_bundle_path(vereador['foto'])
+                    
                     if os.path.exists(foto_path):
                         pixmap = QPixmap(foto_path)
                         # Escalar imagem mantendo aspecto e cobrindo quadrado
