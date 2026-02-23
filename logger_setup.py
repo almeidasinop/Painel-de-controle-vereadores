@@ -2,6 +2,7 @@ import logging
 import os
 import sys
 from datetime import datetime
+import threading
 
 class StreamToLogger(object):
     """
@@ -10,11 +11,24 @@ class StreamToLogger(object):
     def __init__(self, logger, log_level=logging.INFO):
         self.logger = logger
         self.log_level = log_level
-        self.linebuf = ''
+        self.lock = threading.Lock()
+        self.is_logging = False
 
     def write(self, buf):
-        for line in buf.rstrip().splitlines():
-            self.logger.log(self.log_level, line.rstrip())
+        if not buf.strip():
+            return
+            
+        # Evitar recursão infinita se o próprio logger tentar imprimir algo
+        if self.is_logging:
+            return
+            
+        with self.lock:
+            try:
+                self.is_logging = True
+                for line in buf.rstrip().splitlines():
+                    self.logger.log(self.log_level, line.rstrip())
+            finally:
+                self.is_logging = False
 
     def flush(self):
         pass
@@ -50,8 +64,6 @@ def setup_logger(process_name="app"):
             for f in files_to_delete:
                 try:
                     os.remove(f)
-                    # logging ainda não está configurado, usar print
-                    # print(f"Log antigo removido: {f}") 
                 except OSError:
                     pass
     except Exception:
@@ -74,18 +86,18 @@ def setup_logger(process_name="app"):
     file_handler.setFormatter(log_formatter)
     file_handler.setLevel(logging.DEBUG) # Capturar tudo no arquivo
 
-    # 5. Configurar Handler de Console (para continuar vendo no terminal)
-    # Importante: Usamos sys.__stdout__ para garantir que vamos para o terminal real
-    # e não para o nosso redirecionador (evitando loop infinito)
-    console_handler = logging.StreamHandler(sys.__stdout__)
-    console_handler.setFormatter(log_formatter)
-    console_handler.setLevel(logging.INFO) # No console, apenas Info pra cima
-
-    # 6. Configurar Root Logger
+    # 5. Configurar Root Logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.DEBUG)
     root_logger.addHandler(file_handler)
-    root_logger.addHandler(console_handler)
+
+    # 6. Configurar Handler de Console APENAS se houver um console (sys.__stdout__ não é None)
+    # Importante: No modo --noconsole do PyInstaller, sys.__stdout__ é None.
+    if sys.__stdout__ is not None:
+        console_handler = logging.StreamHandler(sys.__stdout__)
+        console_handler.setFormatter(log_formatter)
+        console_handler.setLevel(logging.INFO)
+        root_logger.addHandler(console_handler)
 
     # 7. Redirecionar print (stdout) e erros (stderr) para o Logger
     # Isso garante que 'print()' e crashs apareçam no arquivo de log
