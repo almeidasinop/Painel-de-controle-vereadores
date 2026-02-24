@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QListWidget, QListWidgetItem, QLineEdit,
     QSpinBox, QGroupBox, QGridLayout, QMessageBox, QComboBox,
-    QFrame, QSizePolicy, QStackedWidget, QMenu
+    QFrame, QSizePolicy, QStackedWidget, QMenu, QScrollArea
 )
-from PySide6.QtCore import Qt, QTimer, Signal, QThread
-from PySide6.QtGui import QFont, QIcon, QPalette, QColor, QPixmap
+from PySide6.QtCore import Qt, QTimer, Signal, QThread, QSize
+from PySide6.QtGui import QFont, QIcon, QPalette, QColor, QPixmap, QTransform
 import socket
 
 from arduino_controller import ArduinoController
@@ -213,6 +213,46 @@ class PainelPresidente(QMainWindow):
         
         # Abrir em fullscreen
         self.showFullScreen()
+
+    def resizeEvent(self, event):
+        """Ajustar altura dos cards de vereadores no redimensionamento"""
+        super().resizeEvent(event)
+        # O QGridLayout de 5 colunas se ajusta automaticamente.
+        # Aqui apenas atualizamos a altura dos cards para preencher 3 linhas.
+        QTimer.singleShot(50, self._update_card_sizes)
+
+    def _update_card_sizes(self):
+        """Calcula e aplica altura = scroll_area_height / 3 em todos os cards"""
+        if not hasattr(self, 'vereadores_scroll_area') or not hasattr(self, 'vereador_card_widgets'):
+            return
+        spacing = self.vereadores_grid.spacing()
+        available_h = self.vereadores_scroll_area.viewport().height()
+        # 4 linhas e 3 espaçamentos internos entre elas
+        card_h = max(80, (available_h - spacing * 3) // 4)
+        for card, foto_label, pixmap_orig in self.vereador_card_widgets:
+            card.setFixedHeight(card_h)
+            # Recalcular largura real do card
+            available_w = self.vereadores_scroll_area.viewport().width()
+            spacing_h = self.vereadores_grid.spacing()
+            card_w = max(80, (available_w - spacing_h * 4) // 5)
+            # Foto com crop para preencher exatamente a área disponível
+            foto_h = max(60, card_h - 55)  # reservar 55px para nome/partido
+            foto_w = card_w - 16  # margens do card_layout
+            if pixmap_orig and not pixmap_orig.isNull():
+                # Expandir e recortar centralizado
+                scaled = pixmap_orig.scaled(
+                    foto_w, foto_h,
+                    Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                    Qt.TransformationMode.SmoothTransformation
+                )
+                x = (scaled.width() - foto_w) // 2
+                y = (scaled.height() - foto_h) // 2
+                cropped = scaled.copy(x, y, foto_w, foto_h)
+                foto_label.setPixmap(cropped)
+                foto_label.setFixedSize(foto_w, foto_h)
+            else:
+                foto_label.setFixedSize(foto_w, foto_h)
+
     
     def create_timer_section(self):
         """Criar seção do cronômetro"""
@@ -514,161 +554,205 @@ class PainelPresidente(QMainWindow):
         group.setLayout(layout)
         return group
 
+    def _make_circular_pixmap(self, pixmap, size):
+        """Retorna um QPixmap recortado em círculo de 'size' x 'size'."""
+        from PySide6.QtGui import QPainter, QPainterPath
+        result = QPixmap(size, size)
+        result.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(result)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        path = QPainterPath()
+        path.addEllipse(0, 0, size, size)
+        painter.setClipPath(path)
+        scaled = pixmap.scaled(size, size,
+            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            Qt.TransformationMode.SmoothTransformation)
+        ox = (scaled.width()  - size) // 2
+        oy = (scaled.height() - size) // 2
+        painter.drawPixmap(0, 0, scaled, ox, oy, size, size)
+        painter.end()
+        return result
+
     def create_speaker_section_content(self, parent_layout):
-        """Helper para criar a área de orador (Modo Normal e Aparte)"""
-        # Criar Stacked Widget para alternar layouts
+        """Painel 'Orador em Tribuna' — design premium e compacto"""
         self.speaker_stack = QStackedWidget()
-        
-        # --- PÁGINA 0: MODO NORMAL ---
+
+        # ── PÁGINA 0: MODO NORMAL ──────────────────────────────────
         page_normal = QWidget()
-        layout_normal = QVBoxLayout()
-        
-        self.normal_photo = QLabel("👤")
-        self.normal_photo.setFixedSize(140, 140)
+        page_normal.setStyleSheet("background: transparent;")
+        lay_n = QHBoxLayout(page_normal)
+        lay_n.setContentsMargins(16, 8, 16, 8)
+        lay_n.setSpacing(18)
+
+        self.normal_photo = QLabel("\U0001f464")
+        self.normal_photo.setFixedSize(100, 100)
         self.normal_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.normal_photo.setStyleSheet("""
             QLabel {
-                border: 3px solid rgba(102, 126, 234, 0.5);
-                border-radius: 70px; /* Redondo */
-                background: rgba(255, 255, 255, 0.05);
+                border: 3px solid rgba(102,126,234,0.7);
+                border-radius: 50px;
+                background: rgba(102,126,234,0.12);
+                font-size: 42px;
+                color: rgba(102,126,234,0.6);
             }
         """)
-        
+
+        info_w = QWidget()
+        info_w.setStyleSheet("background: transparent;")
+        info_l = QVBoxLayout(info_w)
+        info_l.setContentsMargins(0, 0, 0, 0)
+        info_l.setSpacing(2)
+
+        lbl_tag = QLabel("\U0001f3a4  EM TRIBUNA")
+        lbl_tag.setStyleSheet("font-size: 9px; font-weight: bold; color: rgba(102,200,255,0.75); letter-spacing: 2px; border: none; background: transparent;")
+
         self.normal_label = QLabel("Selecione um Vereador")
-        self.normal_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.normal_label.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-        
-        layout_normal.addWidget(self.normal_photo, 0, Qt.AlignmentFlag.AlignCenter)
-        layout_normal.addWidget(self.normal_label)
-        page_normal.setLayout(layout_normal)
+        self.normal_label.setWordWrap(True)
+        self.normal_label.setStyleSheet("font-size: 19px; font-weight: bold; color: #fff; border: none; background: transparent;")
+
+        self.normal_partido_label = QLabel("")
+        self.normal_partido_label.setStyleSheet("font-size: 12px; color: rgba(180,190,255,0.7); border: none; background: transparent;")
+
+        info_l.addStretch()
+        info_l.addWidget(lbl_tag)
+        info_l.addWidget(self.normal_label)
+        info_l.addWidget(self.normal_partido_label)
+        info_l.addStretch()
+
+        lay_n.addWidget(self.normal_photo)
+        lay_n.addWidget(info_w, 1)
         self.speaker_stack.addWidget(page_normal)
-        
-        # --- PÁGINA 1: MODO APARTE (A -> B) ---
+
+        # ── PÁGINA 1: MODO APARTE ──────────────────────────────────
         page_aparte = QWidget()
-        layout_aparte = QHBoxLayout() # Horizontal
-        layout_aparte.setSpacing(20) # Espaço entre elementos
-        
-        # 1. Concedente (Esquerda)
-        layout_concedente = QVBoxLayout()
-        self.aparte_concedente_photo = QLabel("👤")
-        self.aparte_concedente_photo.setFixedSize(120, 120)
-        self.aparte_concedente_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.aparte_concedente_photo.setStyleSheet("border-radius: 10px; border: 2px solid #888; background: rgba(255,255,255,0.05);")
-        
-        self.aparte_concedente_label = QLabel("Orador Original")
-        self.aparte_concedente_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.aparte_concedente_label.setStyleSheet("font-size: 14px; color: #fff; font-weight: bold; margin-top: 5px;")
-        
-        layout_concedente.addWidget(self.aparte_concedente_photo, 0, Qt.AlignmentFlag.AlignCenter)
-        layout_concedente.addWidget(self.aparte_concedente_label)
-        
-        # 2. Texto Central
-        lbl_info = QLabel("concede aparte para")
-        lbl_info.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_info.setStyleSheet("color: #fff; font-size: 18px; font-weight: normal; margin: 0 10px;")
-        
-        # 3. Receptor (Direita - Com moldura de destaque)
-        frame_receptor = QFrame()
-        frame_receptor.setStyleSheet("""
-            QFrame {
-                border: 2px solid #f39c12; 
-                border-radius: 10px;
-                /* Background removido temporariamente para teste visual limpo se desejar, mas mantendo conforme pedido anterior */
-                background-color: transparent; 
-            }
-        """)
-        layout_receptor = QVBoxLayout(frame_receptor)
-        layout_receptor.setContentsMargins(15, 15, 15, 15)
-        
-        self.aparte_receptor_photo = QLabel("👤")
-        self.aparte_receptor_photo.setFixedSize(120, 120)
-        self.aparte_receptor_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.aparte_receptor_photo.setStyleSheet("border: none; background: transparent;") # Borda já está no frame
-        
-        self.aparte_receptor_label = QLabel("Novo Orador")
-        self.aparte_receptor_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.aparte_receptor_label.setStyleSheet("font-size: 14px; font-weight: bold; color: white; border: none; margin-top: 5px;")
-        
-        layout_receptor.addWidget(self.aparte_receptor_photo, 0, Qt.AlignmentFlag.AlignCenter)
-        layout_receptor.addWidget(self.aparte_receptor_label)
-        
-        # Montar layout final
-        layout_aparte.addLayout(layout_concedente)
-        layout_aparte.addWidget(lbl_info)
-        layout_aparte.addWidget(frame_receptor)
-        
-        page_aparte.setLayout(layout_aparte)
+        page_aparte.setStyleSheet("background: transparent;")
+        lay_a = QHBoxLayout(page_aparte)
+        lay_a.setContentsMargins(16, 6, 16, 6)
+        lay_a.setSpacing(12)
+
+        def _person_block(accent_color, bg_color):
+            """Bloco horizontal [foto circular | role + nome + partido]"""
+            container = QWidget()
+            # Fundo sutil apenas no container, não propaga
+            container.setStyleSheet(
+                f"QWidget#{container.objectName()} {{ background: {bg_color}; border-radius: 10px; }}"
+            )
+            container.setStyleSheet(f"background: {bg_color}; border-radius: 10px;")
+            hl = QHBoxLayout(container)
+            hl.setContentsMargins(10, 8, 10, 8)
+            hl.setSpacing(12)
+
+            photo_lbl = QLabel("\U0001f464")
+            photo_lbl.setFixedSize(80, 80)
+            photo_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            # Sem border-radius no label — o círculo é feito no pixmap mesmo
+            photo_lbl.setStyleSheet(
+                f"border: 2px solid {accent_color}; border-radius: 40px; "
+                "background: rgba(255,255,255,0.05); font-size: 32px; "
+                f"color: {accent_color};"
+            )
+
+            text_col = QWidget()
+            text_col.setStyleSheet("background: transparent;")
+            tl = QVBoxLayout(text_col)
+            tl.setContentsMargins(0, 0, 0, 0)
+            tl.setSpacing(2)
+
+            role_lbl = QLabel()
+            role_lbl.setStyleSheet(
+                f"font-size: 9px; font-weight: bold; color: {accent_color}; "
+                "letter-spacing: 1px; border: none; background: transparent;"
+            )
+            nome_lbl = QLabel("---")
+            nome_lbl.setWordWrap(True)
+            nome_lbl.setStyleSheet("font-size: 14px; font-weight: bold; color: #fff; border: none; background: transparent;")
+
+            partido_lbl = QLabel("")
+            partido_lbl.setStyleSheet("font-size: 11px; color: rgba(180,190,255,0.7); border: none; background: transparent;")
+
+            tl.addStretch()
+            tl.addWidget(role_lbl)
+            tl.addWidget(nome_lbl)
+            tl.addWidget(partido_lbl)
+            tl.addStretch()
+
+            hl.addWidget(photo_lbl)
+            hl.addWidget(text_col, 1)
+            return container, photo_lbl, nome_lbl, partido_lbl, role_lbl
+
+        w_conc, self.aparte_concedente_photo, self._conc_nome, self._conc_partido, self._conc_role = \
+            _person_block("#667eea", "rgba(102,126,234,0.10)")
+        self._conc_role.setText("CONCEDENTE")
+
+        arrow_lbl = QLabel("\u27a1")
+        arrow_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arrow_lbl.setStyleSheet("font-size: 22px; color: rgba(255,255,255,0.4); border: none; background: transparent;")
+        arrow_lbl.setFixedWidth(40)
+
+        w_rec, self.aparte_receptor_photo, self._rec_nome, self._rec_partido, self._rec_role = \
+            _person_block("#f39c12", "rgba(243,156,18,0.10)")
+        self._rec_role.setText("EM TRIBUNA")
+
+        lay_a.addWidget(w_conc, 1)
+        lay_a.addWidget(arrow_lbl)
+        lay_a.addWidget(w_rec, 1)
         self.speaker_stack.addWidget(page_aparte)
-        
-        # Wrap em GroupBox
-        current_group = QGroupBox("🎤 Orador em Tribuna")
-        container_layout = QVBoxLayout()
-        container_layout.addWidget(self.speaker_stack)
-        current_group.setLayout(container_layout)
-        
+
+        # ── GroupBox wrapper ────────────────────────────────────────
+        current_group = QGroupBox("\U0001f3a4 Orador em Tribuna")
+        grp_lay = QVBoxLayout()
+        grp_lay.setContentsMargins(4, 2, 4, 4)
+        grp_lay.addWidget(self.speaker_stack)
+        current_group.setLayout(grp_lay)
+        current_group.setMaximumHeight(175)
+        current_group.setMinimumHeight(120)
         parent_layout.addWidget(current_group)
 
     def create_vereadores_section(self):
-        """Criar seção de vereadores"""
+        """Criar seção de vereadores - grid fixo de 5 colunas"""
         group = QGroupBox("👥 Vereadores")
         layout = QVBoxLayout()
-        
-        # Busca
-        search_layout = QHBoxLayout()
-        search_label = QLabel("🔍 Buscar:")
-        search_layout.addWidget(search_label)
-        
-        self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Nome ou partido...")
-        self.search_input.textChanged.connect(self.filter_vereadores)
-        self.search_input.setMinimumHeight(35)
-        search_layout.addWidget(self.search_input)
-        
-        layout.addLayout(search_layout)
-        
-        # Lista de vereadores (Visualização em Cards)
-        self.vereadores_list = QListWidget()
-        self.vereadores_list.setViewMode(QListWidget.ViewMode.IconMode)
-        self.vereadores_list.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.vereadores_list.setMovement(QListWidget.Movement.Static)
-        self.vereadores_list.setSpacing(15)
-        self.vereadores_list.setIconSize(QPixmap(100, 100).size())
-        self.vereadores_list.itemClicked.connect(self.select_vereador)
-        
-        # Estilo específico para Cards
-        self.vereadores_list.setStyleSheet("""
-            QListWidget {
-                background: rgba(255, 255, 255, 0.05);
-                border: none;
-                outline: none;
+        layout.setContentsMargins(10, 15, 10, 10)
+        layout.setSpacing(8)
+
+        # --- Área de scroll que contém o grid ---
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QFrame.Shape.NoFrame)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_area.setStyleSheet("""
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical {
+                background: rgba(255,255,255,0.05);
+                width: 8px;
+                border-radius: 4px;
             }
-            QListWidget::item {
-                background: rgba(255, 255, 255, 0.1);
-                border-radius: 10px;
-                padding: 10px;
-                color: white;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-            }
-            QListWidget::item:hover {
-                background: rgba(102, 126, 234, 0.3);
-                border-color: #667eea;
-                transform: scale(1.05);
-            }
-            QListWidget::item:selected {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 #667eea, stop:1 #764ba2);
-                border: 2px solid #00f2fe;
+            QScrollBar::handle:vertical {
+                background: rgba(102,126,234,0.6);
+                border-radius: 4px;
             }
         """)
-        
-        # Lista (Stretch acima de 0 para expandir e ocupar espaço)
-        layout.addWidget(self.vereadores_list, 1)
-        
-        # Usar o novo helper para criar a seção do orador (Stretch 0 para tamanho fixo)
+
+        # Widget interno que recebe o grid
+        self.grid_container = QWidget()
+        self.grid_container.setStyleSheet("background: transparent;")
+        self.vereadores_grid = QGridLayout(self.grid_container)
+        self.vereadores_grid.setContentsMargins(0, 0, 0, 0)
+        self.vereadores_grid.setSpacing(12)
+        # Tornar as 5 colunas igualmente esticadas
+        for col in range(5):
+            self.vereadores_grid.setColumnStretch(col, 1)
+
+        self.vereadores_scroll_area = scroll_area
+        scroll_area.setWidget(self.grid_container)
+        layout.addWidget(scroll_area, 3)  # stretch=3 → grid ocupa 75%, speaker 25%
+
+        # Seção do orador
         self.create_speaker_section_content(layout)
-        
+
         group.setLayout(layout)
         return group
+
     
     def apply_styles(self):
         """Aplicar estilos globais"""
@@ -728,7 +812,7 @@ class PainelPresidente(QMainWindow):
                 color: white;
                 border: 1px solid rgba(255, 255, 255, 0.2);
                 border-radius: 8px;
-                padding: 5px;
+                padding: 0px;
             }
             QListWidget::item {
                 padding: 10px;
@@ -768,149 +852,225 @@ class PainelPresidente(QMainWindow):
             self.populate_vereadores_list()
     
     def populate_vereadores_list(self, filter_text=''):
-        """Preencher lista de vereadores"""
-        self.vereadores_list.clear()
-        
+        """Preencher grid de vereadores (5 colunas fixas)"""
+        # Limpar grid anterior
+        while self.vereadores_grid.count():
+            item = self.vereadores_grid.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self.vereador_cards = {}  # mapa nome -> card para highlight de seleção
+        self.vereador_card_widgets = []  # lista (card, foto_label, pixmap_orig) para resize
+        row, col = 0, 0
+        COLS = 5
+
         for vereador in self.vereadores:
             nome = vereador['nome']
             partido = vereador['partido']
-            
-            if filter_text.lower() in nome.lower() or filter_text.lower() in partido.lower():
-                # Texto formatado para o card
-                item_text = f"{nome}\n{partido}"
-                item = QListWidgetItem(item_text)
-                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                item.setData(Qt.ItemDataRole.UserRole, vereador)
-                
-                # Adicionar foto como ícone
-                if vereador.get('foto'):
-                    # Tentar primeiro na pasta de dados do usuário (onde fotos novas são salvas)
-                    foto_path = self.session_config.get_data_path(vereador['foto'])
-                    if not os.path.exists(foto_path):
-                        # Tentar no bundle (fotos originais que vieram com o instalador)
-                        foto_path = self.session_config.get_bundle_path(vereador['foto'])
-                    
-                    if os.path.exists(foto_path):
-                        pixmap = QPixmap(foto_path)
-                        # Escalar imagem mantendo aspecto e cobrindo quadrado
-                        scaled = pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation)
-                        
-                        # Recortar quadrado central
-                        rect = scaled.rect()
-                        size = min(rect.width(), rect.height())
-                        cropped = scaled.copy(
-                            (rect.width() - size) // 2,
-                            (rect.height() - size) // 2,
-                            size, size
-                        )
-                        
-                        icon = QIcon(cropped)
-                        item.setIcon(icon)
+
+            if filter_text.lower() not in nome.lower() and filter_text.lower() not in partido.lower():
+                continue
+
+            # --- Card ---
+            card = QFrame()
+            card.setObjectName("vereador_card")
+            card.setCursor(Qt.CursorShape.PointingHandCursor)
+            card.setStyleSheet("""
+                QFrame#vereador_card {
+                    background: rgba(255,255,255,0.08);
+                    border: 1px solid rgba(255,255,255,0.12);
+                    border-radius: 12px;
+                }
+                QFrame#vereador_card:hover {
+                    background: rgba(102,126,234,0.25);
+                    border: 1px solid #667eea;
+                }
+            """)
+
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(8, 8, 8, 8)
+            card_layout.setSpacing(6)
+            card_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+            # Foto — o recorte dinâmico será feito em _update_card_sizes
+            foto_label = QLabel()
+            foto_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            foto_label.setStyleSheet("border: none; background: transparent;")
+            foto_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+            pixmap_orig = None  # Guardar original para recorte dinâmico
+            if vereador.get('foto'):
+                foto_path_data   = self.session_config.get_data_path(vereador['foto'])
+                foto_path_bundle = self.session_config.get_bundle_path(vereador['foto'])
+                foto_path = foto_path_data if os.path.exists(foto_path_data) else foto_path_bundle
+                if os.path.exists(foto_path):
+                    pixmap_orig = QPixmap(foto_path)
+                    if pixmap_orig.isNull():
+                        print(f'[AVISO] Foto inacessível: {foto_path}')
+                        pixmap_orig = None
+                        foto_label.setText('👤')
+                        foto_label.setStyleSheet('font-size: 60px; border: none; background: transparent;')
                     else:
-                        item.setIcon(QIcon()) # Ícone vazio se arquivo não existir
+                        foto_label.setPixmap(pixmap_orig.scaled(200, 200,
+                            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                            Qt.TransformationMode.SmoothTransformation))
                 else:
-                    item.setIcon(QIcon()) # Sem foto
-                
-                # Definir tamanho do card
-                item.setSizeHint(QPixmap(140, 160).size())
-                
-                self.vereadores_list.addItem(item)
+                    print(f'[AVISO] Foto nao encontrada: {vereador["foto"]}')
+                    print(f'  data  : {foto_path_data}')
+                    print(f'  bundle: {foto_path_bundle}')
+                    foto_label.setText('👤')
+                    foto_label.setStyleSheet('font-size: 60px; border: none; background: transparent;')
+            else:
+                foto_label.setText('👤')
+                foto_label.setStyleSheet('font-size: 60px; border: none; background: transparent;')
+
+            card_layout.addWidget(foto_label, 1)  # stretch=1 para crescer
+
+            # Nome
+            nome_label = QLabel(nome)
+            nome_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            nome_label.setWordWrap(True)
+            nome_label.setStyleSheet("color: white; font-size: 13px; font-weight: bold; border: none; background: transparent;")
+            card_layout.addWidget(nome_label)
+
+            # Partido
+            partido_label = QLabel(partido)
+            partido_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            partido_label.setStyleSheet("color: rgba(200,200,255,0.7); font-size: 12px; border: none; background: transparent;")
+            card_layout.addWidget(partido_label)
+
+            # Guardar dados no frame para recuperar no clique
+            card.setProperty('vereador_data', vereador)
+
+            # Conectar clique no card
+            card.mousePressEvent = lambda e, v=vereador: self._on_card_click(v)
+
+            self.vereadores_grid.addWidget(card, row, col)
+            self.vereador_cards[nome] = card
+            self.vereador_card_widgets.append((card, foto_label, pixmap_orig))
+
+            col += 1
+            if col >= COLS:
+                col = 0
+                row += 1
+
+        # Preencher espaços vazios na última linha com widgets transparentes
+        if col > 0:
+            for c in range(col, COLS):
+                spacer = QWidget()
+                spacer.setStyleSheet("background: transparent;")
+                self.vereadores_grid.addWidget(spacer, row, c)
+
+        # Iniciar redimensionamento dinâmico após a construção
+        QTimer.singleShot(100, self._update_card_sizes)
 
     def sync_list_selection(self):
-        """Sincronizar seleção da lista com o selected_vereador atual"""
+        """Sincronizar seleção visual dos cards com o vereador atual"""
         if not self.selected_vereador:
             return
-            
         nome_alvo = self.selected_vereador.get('nome')
-        
-        # Bloquear sinais para não disparar select_vereador de novo (loop)
-        self.vereadores_list.blockSignals(True)
-        
-        try:
-            for i in range(self.vereadores_list.count()):
-                item = self.vereadores_list.item(i)
-                data = item.data(Qt.ItemDataRole.UserRole)
-                if data and data.get('nome') == nome_alvo:
-                    self.vereadores_list.setCurrentItem(item)
-                    self.vereadores_list.scrollToItem(item)
-                    break
-        finally:
-            self.vereadores_list.blockSignals(False)
-    
+        cards = getattr(self, 'vereador_cards', {})
+        for nome, card in cards.items():
+            if nome == nome_alvo:
+                card.setStyleSheet("""
+                    QFrame#vereador_card {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                            stop:0 #667eea, stop:1 #764ba2);
+                        border: 2px solid #00f2fe;
+                        border-radius: 12px;
+                    }
+                """)
+            else:
+                card.setStyleSheet("""
+                    QFrame#vereador_card {
+                        background: rgba(255,255,255,0.08);
+                        border: 1px solid rgba(255,255,255,0.12);
+                        border-radius: 12px;
+                    }
+                    QFrame#vereador_card:hover {
+                        background: rgba(102,126,234,0.25);
+                        border: 1px solid #667eea;
+                    }
+                """)
+
     def filter_vereadores(self):
-        """Filtrar vereadores"""
-        filter_text = self.search_input.text()
-        self.populate_vereadores_list(filter_text)
+        """Filtrar vereadores (barra de busca removida, mantido por compatibilidade)"""
+        fi = getattr(self, 'search_input', None)
+        self.populate_vereadores_list(fi.text() if fi else '')
     
-    def select_vereador(self, item):
-        """Selecionar vereador"""
-        self.selected_vereador = item.data(Qt.ItemDataRole.UserRole)
-        
-        # Se não estiver em modo aparte, atualizar painel normal
+    def _on_card_click(self, vereador):
+        """Chamado quando um card de vereador é clicado"""
+        self.selected_vereador = vereador
+        self.sync_list_selection()
+
         if not getattr(self, 'is_parte_mode', False):
             self.update_speaker_panel()
-            
-        # Habilitar botão de aparte
+
         self.update_aparte_button_state()
         self.update_presets_state()
-        
-        # Enviar para Servidor (API)
+
         api_post('speaker', {'speaker': self.selected_vereador})
-        
-        # Sincronizar com tela do plenário APENAS SE NÃO ESTIVER RODANDO
-        # Se estiver rodando, a troca visual só acontece no START ou APARTE
+
         if not self.is_running:
-             self.live_vereador = self.selected_vereador
-             self.sync_tela_plenario()
+            self.live_vereador = self.selected_vereador
+            self.sync_tela_plenario()
+
+    def select_vereador(self, item=None, vereador=None):
+        """Selecionar vereador — mantido por compatibilidade"""
+        if item is not None:
+            vereador = item.data(Qt.ItemDataRole.UserRole)
+        elif vereador is None:
+            return
+        self._on_card_click(vereador)
 
     def update_speaker_panel(self):
         """Atualiza a UI do orador com base no modo (Normal ou Aparte)"""
-        # Verifica se está em modo aparte
         is_aparte = getattr(self, 'is_parte_mode', False)
-        
+
         if is_aparte and hasattr(self, 'concedente') and hasattr(self, 'receptor'):
-            print("DEBUG: update_speaker_panel em MODO APARTE (Index 1)")
-            # --- MODO APARTE (Página 1) ---
             self.speaker_stack.setCurrentIndex(1)
-            
-            # Atualizar Concedente
-            c_nome = self.concedente.get('nome', '---')
-            self.aparte_concedente_label.setText(f"{c_nome}\n(Concedente)")
+
+            # Concedente
+            self._conc_nome.setText(self.concedente.get('nome', '---'))
+            self._conc_partido.setText(self.concedente.get('partido', ''))
             self._load_photo_into(self.concedente.get('foto'), self.aparte_concedente_photo)
-            
-            # Atualizar Receptor
-            r_nome = self.receptor.get('nome', '---')
-            r_partido = self.receptor.get('partido', '')
-            self.aparte_receptor_label.setText(f"{r_nome}\n{r_partido}")
+
+            # Receptor
+            self._rec_nome.setText(self.receptor.get('nome', '---'))
+            self._rec_partido.setText(self.receptor.get('partido', ''))
             self._load_photo_into(self.receptor.get('foto'), self.aparte_receptor_photo)
-            
+
         else:
-            print("DEBUG: update_speaker_panel em MODO NORMAL (Index 0)")
-            # --- MODO NORMAL (Página 0) ---
             self.speaker_stack.setCurrentIndex(0)
-            
+
             if self.selected_vereador:
-                nome = self.selected_vereador['nome']
-                partido = self.selected_vereador['partido']
-                self.normal_label.setText(f"{nome}\n{partido}")
+                self.normal_label.setText(self.selected_vereador['nome'])
+                self.normal_partido_label.setText(self.selected_vereador.get('partido', ''))
                 self._load_photo_into(self.selected_vereador.get('foto'), self.normal_photo)
             else:
                 self.normal_label.setText("Selecione um Vereador")
-                self.normal_photo.setText("👤")
+                self.normal_partido_label.setText("")
+                self.normal_photo.setText("\U0001f464")
 
-    def _load_photo_into(self, path, label_widget):
-        """Helper para carregar foto em label"""
-        if path:
-            foto_path = os.path.join(os.path.dirname(__file__), path)
+    def _load_photo_into(self, foto_filename, label_widget):
+        """Carrega foto no label como circulo recortado via QPainter"""
+        if foto_filename:
+            foto_path_data   = self.session_config.get_data_path(foto_filename)
+            foto_path_bundle = self.session_config.get_bundle_path(foto_filename)
+            foto_path = foto_path_data if os.path.exists(foto_path_data) else foto_path_bundle
             if os.path.exists(foto_path):
                 pixmap = QPixmap(foto_path)
-                # Escalar para o tamanho do widget
-                w = label_widget.width()
-                h = label_widget.height()
-                label_widget.setPixmap(pixmap.scaled(w, h, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-                return
-        label_widget.setText("👤") # Fallback
-    
+                if not pixmap.isNull():
+                    size = label_widget.width() or label_widget.minimumWidth() or 80
+                    circular = self._make_circular_pixmap(pixmap, size)
+                    label_widget.setPixmap(circular)
+                    return
+                else:
+                    print(f'[AVISO] Speaker foto invalida: {foto_path}')
+            else:
+                print(f'[AVISO] Speaker foto nao encontrada: {foto_filename}')
+        label_widget.setText('👤')
+
     def update_aparte_button_state(self):
         """Atualizar estado do botão de aparte com base na lógica de orador"""
         if self.is_parte_mode:
