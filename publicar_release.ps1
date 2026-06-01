@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repo = "CMJaboticabal/Painel-de-controle-vereadores"
+$repo = "CamaraSinop/Painel-de-controle-vereadores"
 $root = $PSScriptRoot
 
 if (-not $Version) {
