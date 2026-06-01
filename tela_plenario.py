@@ -162,12 +162,13 @@ class TelaPlenario(QMainWindow):
 
     def update_header(self):
         """Atualizar data e sessão no header"""
-        # Data
         locale = QLocale(QLocale.Portuguese, QLocale.Brazil)
-        date_str = locale.toString(QDate.currentDate(), "dddd, d 'de' MMMM 'de' yyyy")
-        # Capitalizar primeira letra
+        if self.session_config.get_secondary_show_year():
+            date_fmt = "dddd, d 'de' MMMM 'de' yyyy"
+        else:
+            date_fmt = "dddd, d 'de' MMMM"
+        date_str = locale.toString(QDate.currentDate(), date_fmt)
         date_str = date_str[0].upper() + date_str[1:] if date_str else ""
-        
         self.header_label.setText(date_str)
     
     def move_to_public_monitor(self):
@@ -486,23 +487,27 @@ class TelaPlenario(QMainWindow):
             self.foto_label.setText("🏛️")
             self.foto_label.setStyleSheet("border: none; background: transparent; font-size: 250px; color: rgba(255, 255, 255, 0.5);")
         
-        # Mostrar número da sessão com DESTAQUE MAIOR
-        session_number = self.session_config.get_session_number()
-        
-        # Estilo de Destaque para Sessão
-        self.nome_label.setStyleSheet("""
-            QLabel {
-                font-size: 70px;
-                font-weight: 900;
-                color: #ffffff;
-                background: transparent;
-                padding: 20px 0;
-            }
-        """)
-        
+        session_number = (self.session_config.get_session_number() or "").upper()
+        from display_utils import (
+            apply_single_line_adaptive_text,
+            effective_label_content_width,
+        )
+
+        max_w = effective_label_content_width(
+            self.nome_label, max(200, self.width() - 80)
+        )
+
         if session_number:
-            self.nome_label.setText(session_number)
-            
+            apply_single_line_adaptive_text(
+                self.nome_label,
+                session_number,
+                max(70, int(max_w * 0.9)),
+                max_w,
+                align=Qt.AlignmentFlag.AlignCenter,
+                fill_width=True,
+                extra_css="background: transparent; padding: 20px 0;",
+            )
+
             city_name = self.session_config.get_city_name()
             partido_text = f"CÂMARA MUNICIPAL DE {city_name}" if city_name else "CÂMARA MUNICIPAL"
             
@@ -568,6 +573,20 @@ class TelaPlenario(QMainWindow):
             self.partido_label.setText("")
             self.set_placeholder_photo()
     
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "session_config"):
+            self.update_header()
+            if not self.timer_started:
+                self.show_session_info()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "session_config"):
+            self.update_header()
+            if not self.timer_started:
+                self.show_session_info()
+
     def keyPressEvent(self, event):
         """Permitir fechar com ESC"""
         if event.key() == Qt.Key.Key_Escape:

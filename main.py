@@ -204,15 +204,11 @@ class PainelPresidente(QMainWindow):
         self.setWindowTitle("Painel do Presidente - Controle de Tribuna")
         self.setMinimumSize(1400, 800)
         
-        # Icone da Janela
-        icon_path = self.session_config.get_data_path(os.path.join("fotos", "logo.png"))
-        if os.path.exists(icon_path):
-             self.setWindowIcon(QIcon(icon_path))
-        else:
-            # Tentar bundle se não estiver em dados (primeira execução)
-            bundle_icon = self.session_config.get_bundle_path(os.path.join("fotos", "logo.png"))
-            if os.path.exists(bundle_icon):
-                self.setWindowIcon(QIcon(bundle_icon))
+        from brand_assets import brand_icon
+
+        app_icon = brand_icon(self.session_config)
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
         
         # Widget central
         central_widget = QWidget()
@@ -1406,10 +1402,15 @@ class PainelPresidente(QMainWindow):
             tempo_gasto = self.aparte_total_seconds - self.remaining_seconds
             if tempo_gasto < 0: tempo_gasto = 0
             
-        tempo_descontado = max(0, tempo_gasto - APARTE_TOLERANCE_SECONDS)
+        if self.session_config.get_aparte_tolerance_enabled():
+            tempo_descontado = max(0, tempo_gasto - APARTE_TOLERANCE_SECONDS)
+            tolerancia_msg = f"{APARTE_TOLERANCE_SECONDS}s (ativa)"
+        else:
+            tempo_descontado = tempo_gasto
+            tolerancia_msg = "desativada"
         print(
             f"DEBUG: Tempo gasto no aparte: {tempo_gasto}s | "
-            f"Tolerância: {APARTE_TOLERANCE_SECONDS}s | "
+            f"Tolerância: {tolerancia_msg} | "
             f"Descontado do orador: {tempo_descontado}s"
         )
         

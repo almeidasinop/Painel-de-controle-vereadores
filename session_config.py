@@ -102,6 +102,12 @@ class SessionConfig:
 
                 # Imagem de fundo da tela secundária
                 self.secondary_background_path = data.get('secondary_background_path', None)
+
+                # Aparte: 1º minuto não desconta do orador (quando ativo)
+                self.aparte_tolerance_enabled = bool(data.get('aparte_tolerance_enabled', True))
+
+                # Exibir ano na tela secundária (cabeçalho / layout lateral)
+                self.secondary_show_year = bool(data.get('secondary_show_year', True))
                 
         except FileNotFoundError:
             self.logo_path = None
@@ -121,6 +127,8 @@ class SessionConfig:
             self.public_screen_index = 1
             self.website_url = 'www.sinop.mt.leg.br'
             self.secondary_background_path = None
+            self.aparte_tolerance_enabled = True
+            self.secondary_show_year = True
             self.save_config()
     
     def save_config(self):
@@ -137,6 +145,8 @@ class SessionConfig:
             'public_screen_index': getattr(self, 'public_screen_index', 1),
             'website_url': getattr(self, 'website_url', 'www.sinop.mt.leg.br'),
             'secondary_background_path': getattr(self, 'secondary_background_path', None),
+            'aparte_tolerance_enabled': getattr(self, 'aparte_tolerance_enabled', True),
+            'secondary_show_year': getattr(self, 'secondary_show_year', True),
         }
         print(f"DEBUG: Gravando JSON session_name='{self.session_name}'")
         with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -257,6 +267,20 @@ class SessionConfig:
     def get_secondary_background_path(self):
         """Obter caminho configurado da imagem de fundo da tela secundária."""
         return getattr(self, 'secondary_background_path', None)
+
+    def set_aparte_tolerance_enabled(self, enabled: bool):
+        self.aparte_tolerance_enabled = bool(enabled)
+        self.save_config()
+
+    def get_aparte_tolerance_enabled(self) -> bool:
+        return bool(getattr(self, 'aparte_tolerance_enabled', True))
+
+    def set_secondary_show_year(self, show: bool):
+        self.secondary_show_year = bool(show)
+        self.save_config()
+
+    def get_secondary_show_year(self) -> bool:
+        return bool(getattr(self, 'secondary_show_year', True))
 
     def get_data_path(self, relative_path=None):
         """Retorna o caminho absoluto na pasta de dados do usuário"""

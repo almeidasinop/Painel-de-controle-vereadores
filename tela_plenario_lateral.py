@@ -110,6 +110,7 @@ class TelaPlenarioLateral(QMainWindow):
         self._f_year_max = f_year
         self._f_name_max = f_name
         self._right_w = right_w
+        self._label_w = label_w
         self._col_padding = COL_PADDING
 
         # ── Alturas das zonas ──────────────────────────────
@@ -157,6 +158,7 @@ class TelaPlenarioLateral(QMainWindow):
 
         # Título da Sessão
         self.sby_session_name_label = QLabel("")
+        self.sby_session_name_label.setWordWrap(False)
         self.sby_session_name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sby_v.addWidget(self.sby_session_name_label)
 
@@ -212,10 +214,11 @@ class TelaPlenarioLateral(QMainWindow):
 
         # Linha do título da sessão
         self.header_session_label = QLabel()
-        self.header_session_label.setWordWrap(True)
+        self.header_session_label.setWordWrap(False)
         self.header_session_label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop
+            Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter
         )
+        self.header_session_label.setMinimumWidth(label_w)
         self.header_session_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
@@ -299,7 +302,7 @@ class TelaPlenarioLateral(QMainWindow):
         self.timer_label.setAlignment(
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
         )
-        self.timer_label.setMaximumWidth(int(label_w * 1.05))
+        self.timer_label.setMaximumWidth(label_w)
         self.timer_label.setSizePolicy(
             QSizePolicy.Policy.Expanding,
             QSizePolicy.Policy.Preferred,
@@ -363,7 +366,14 @@ class TelaPlenarioLateral(QMainWindow):
         # Header Standby Clássico (Top Bar)
         from PySide6.QtCore import QLocale
         locale = QLocale(QLocale.Portuguese, QLocale.Brazil)
-        date_str = locale.toString(QDate.currentDate(), "dddd, d 'de' MMMM 'de' yyyy")
+        show_year = True
+        if hasattr(self, "session_config"):
+            show_year = self.session_config.get_secondary_show_year()
+        if show_year:
+            date_fmt = "dddd, d 'de' MMMM 'de' yyyy"
+        else:
+            date_fmt = "dddd, d 'de' MMMM"
+        date_str = locale.toString(QDate.currentDate(), date_fmt)
         date_str = date_str[0].upper() + date_str[1:] if date_str else ""
         self.sby_header_label.setText(date_str)
 
@@ -374,11 +384,41 @@ class TelaPlenarioLateral(QMainWindow):
         year = str(QDate.currentDate().year())
 
         if hasattr(self, '_f_session_max'):
-            self._apply_dynamic_text(self.header_session_label, session_name, self._f_session_max, self._right_w, self._h_header - self._f_year_max - 20)
-            self.header_year_label.setText(year)
+            from display_utils import (
+                apply_single_line_adaptive_text,
+                effective_label_content_width,
+            )
+
+            fallback_w = getattr(self, "_label_w", self._right_w - COL_PADDING)
+            session_width = effective_label_content_width(
+                self.header_session_label, fallback_w
+            )
+            font_cap = max(self._f_session_max, int(session_width * 0.9))
+            apply_single_line_adaptive_text(
+                self.header_session_label,
+                session_name,
+                font_cap,
+                session_width,
+                align=Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignVCenter,
+                fill_width=True,
+            )
+            if self.header_session_label.width() <= 0:
+                from PySide6.QtCore import QTimer
+                QTimer.singleShot(0, self, self.update_header)
+            if show_year:
+                self.header_year_label.setText(year)
+                self.header_year_label.setVisible(True)
+            else:
+                self.header_year_label.clear()
+                self.header_year_label.setVisible(False)
         else:
             self.header_session_label.setText(session_name)
-            self.header_year_label.setText(year)
+            if show_year:
+                self.header_year_label.setText(year)
+                self.header_year_label.setVisible(True)
+            else:
+                self.header_year_label.clear()
+                self.header_year_label.setVisible(False)
 
     def move_to_public_monitor(self):
         """Exibe em fullscreen no monitor configurado (padrão: monitor 2)."""
@@ -487,11 +527,24 @@ class TelaPlenarioLateral(QMainWindow):
 
         session_number = (self.session_config.get_session_name() or "SESSÃO").upper()
         city = (self.session_config.get_city_name() or "").upper()
-        
-        # O nome da sessão vai ficar grandão no meio
+
+        from display_utils import apply_single_line_adaptive_text
+
         max_w = self.screen().geometry().width() - 100
-        self._apply_dynamic_text(self.sby_session_name_label, session_number, 90, max_w, 150, extra_pad_x=0)
-        self.sby_session_name_label.setStyleSheet(self.sby_session_name_label.styleSheet() + "background: rgba(0, 40, 80, 0.6); border-radius: 10px; padding: 0px 40px; margin: 5px 0;")
+        sby_w = max(200, self.width() - 80)
+        apply_single_line_adaptive_text(
+            self.sby_session_name_label,
+            session_number,
+            max(90, int(sby_w * 0.9)),
+            sby_w,
+            align=Qt.AlignmentFlag.AlignCenter,
+            fill_width=True,
+            extra_pad_x=80,
+            extra_css=(
+                "background: rgba(0, 40, 80, 0.6); border-radius: 10px; "
+                "padding: 0px 40px; margin: 5px 0;"
+            ),
+        )
         
         # A cidade vai ficar embaixo
         city_text = f"CÂMARA MUNICIPAL DE {city}" if city else "CÂMARA MUNICIPAL"
@@ -530,7 +583,14 @@ class TelaPlenarioLateral(QMainWindow):
             texto = f"{nome}  |  {partido}" if partido else nome
             
             if hasattr(self, '_f_name_max'):
-                self._apply_dynamic_text(self.nome_partido_label, texto, self._f_name_max, self._right_w, self._h_namezone, extra_pad_x=self._col_padding)
+                self._apply_dynamic_text(
+                    self.nome_partido_label,
+                    texto,
+                    self._f_name_max,
+                    getattr(self, "_label_w", self._right_w - COL_PADDING),
+                    self._h_namezone,
+                    extra_pad_x=60,
+                )
             else:
                 self.nome_partido_label.setText(texto)
             
@@ -616,6 +676,22 @@ class TelaPlenarioLateral(QMainWindow):
     # ──────────────────────────────────────────────────────
     #  Teclado
     # ──────────────────────────────────────────────────────
+    def showEvent(self, event):
+        super().showEvent(event)
+        self.update_header()
+        if not self.timer_started:
+            self.show_session_info()
+        elif self.current_vereador:
+            self.update_vereador(self.current_vereador)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.update_header()
+        if not self.timer_started:
+            self.show_session_info()
+        elif self.current_vereador:
+            self.update_vereador(self.current_vereador)
+
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.close()
@@ -630,9 +706,11 @@ class TelaPlenarioLateral(QMainWindow):
         high = max_font_px
         best_size = low
         
-        safe_w = max_w - extra_pad_x
-        safe_h = max_h - 10 # 10px safe margin vertically
-        
+        from display_utils import safe_content_width
+
+        safe_w = safe_content_width(max_w, extra_pad_x)
+        safe_h = max_h - 10  # margem vertical
+
         # Binary search for the best font size
         while low <= high:
             mid = (low + high) // 2

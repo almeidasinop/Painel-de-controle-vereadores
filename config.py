@@ -30,5 +30,9 @@ AUDIO_DEFAULT_STATE = False  # False = cortado (seguro)
 ARDUINO_TIMEOUT_SAFETY = 5000  # milissegundos
 
 # Versão do Sistema
-VERSION = "1.7.9"
+VERSION = "1.8.0"
 GITHUB_REPO = "camara-jaboticabal/Painel-de-controle-vereadores"
+
+# Marca e créditos (arquivos em fotos/)
+BRAND_LOGO_FILE = "fotos/favicon.svg"
+DEVELOPER_PHOTO_FILE = "fotos/77593994.png"

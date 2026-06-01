@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
     QFileDialog, QGroupBox, QFormLayout, QWidget, QInputDialog,
     QTabWidget, QColorDialog, QFrame, QScrollArea, QApplication,
-    QComboBox, QGridLayout, QSpinBox
+    QComboBox, QGridLayout, QSpinBox, QCheckBox, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QColor, QFont, QPainterPath, QPainter, QBrush, QPen
@@ -163,6 +163,12 @@ class VereadoresAdminDialog(QDialog):
         """Inicializar interface com ABAS"""
         self.setWindowTitle("Administração do Sistema")
         self.setMinimumSize(1000, 750)
+
+        from brand_assets import brand_icon
+
+        app_icon = brand_icon(self.session_config)
+        if not app_icon.isNull():
+            self.setWindowIcon(app_icon)
         
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
@@ -584,16 +590,20 @@ class VereadoresAdminDialog(QDialog):
         """Aba de customização e configuração"""
         tab = QScrollArea()
         tab.setWidgetResizable(True)
+        tab.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         tab.setStyleSheet("QScrollArea { border: none; background: transparent; }")
         
         content = QWidget()
+        content.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         layout = QVBoxLayout(content)
-        layout.setSpacing(30)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(20)
         
         # --- SEÇÃO DADOS DA SESSÃO ---
         sessao_group = QGroupBox("📅 Dados da Sessão")
         sessao_layout = QFormLayout()
-        sessao_layout.setSpacing(15)
+        sessao_layout.setSpacing(12)
+        sessao_layout.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         
         self.session_input = QLineEdit()
         self.session_input.setObjectName("txtSessionName")
@@ -620,95 +630,193 @@ class VereadoresAdminDialog(QDialog):
         sessao_layout.addRow("", btn_backup)
         
         # Logo
-        logo_layout = QHBoxLayout()
         self.logo_path_label = QLabel(self.session_config.get_logo() or "Nenhuma logo selecionada")
+        self.logo_path_label.setWordWrap(True)
+        self.logo_path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         btn_logo = QPushButton("📁 Escolher Logo")
         btn_logo.clicked.connect(self.escolher_logo)
-        
-        logo_layout.addWidget(self.logo_path_label)
-        logo_layout.addWidget(btn_logo)
-        sessao_layout.addRow("Logo da Casa:", logo_layout)
+        logo_btns = QHBoxLayout()
+        logo_btns.addWidget(btn_logo)
+        logo_btns.addStretch()
+        logo_wrap = QVBoxLayout()
+        logo_wrap.addWidget(self.logo_path_label)
+        logo_wrap.addLayout(logo_btns)
+        sessao_layout.addRow("Logo da Casa:", logo_wrap)
         
         sessao_group.setLayout(sessao_layout)
         layout.addWidget(sessao_group)
         
         # --- SEÇÃO TELA SECUNDÁRIA ---
-        tela_group = QGroupBox("🖥️ Tela Secundária (Monitor 2)")
-        tela_layout = QFormLayout()
-        tela_layout.setSpacing(15)
-        
-        self.combo_screen_type = QComboBox()
-        self.combo_screen_type.setObjectName("comboScreenType")
-        self.combo_screen_type.addItem("🖥️  Tela Plenário Padrão (clássica)", "plenario")
-        self.combo_screen_type.addItem("🖼️  Layout Lateral (foto + nome + cronômetro)", "lateral")
-        
-        # Restaurar seleção salva
-        current_type = self.session_config.get_secondary_screen_type()
-        idx = self.combo_screen_type.findData(current_type)
-        if idx >= 0:
-            self.combo_screen_type.setCurrentIndex(idx)
-        
-        self.combo_screen_type.setMinimumHeight(40)
-        self.combo_screen_type.setStyleSheet("""
+        tela_group = QGroupBox("🖥️ Tela secundária (público)")
+        tela_main = QVBoxLayout()
+        tela_main.setSpacing(12)
+        tela_main.setContentsMargins(6, 10, 6, 6)
+
+        combo_style = """
             QComboBox {
                 background: #1a1a2e;
                 color: white;
                 border: 1px solid #303050;
-                padding: 8px 14px;
+                padding: 8px 12px;
                 border-radius: 6px;
-                font-size: 14px;
+                font-size: 13px;
+                min-height: 20px;
             }
             QComboBox::drop-down {
                 border: none;
-                width: 30px;
+                width: 28px;
             }
             QComboBox QAbstractItemView {
                 background: #162447;
                 color: white;
                 selection-background-color: #e94560;
             }
-        """)
-        tela_layout.addRow("Tipo de Tela:", self.combo_screen_type)
+        """
+        btn_compact_style = """
+            QPushButton {
+                background: #243352;
+                color: #e8ecf5;
+                border: 1px solid #3d5080;
+                padding: 8px 14px;
+                border-radius: 6px;
+                font-size: 12px;
+                font-weight: 600;
+            }
+            QPushButton:hover {
+                background: #2f4268;
+                border-color: #4a6294;
+            }
+        """
+
+        def _tela_subsection(titulo: str) -> tuple[QFrame, QVBoxLayout]:
+            titulo_lbl = QLabel(titulo.upper())
+            titulo_lbl.setStyleSheet(
+                "color: #8fa3c8; font-size: 11px; font-weight: bold; "
+                "letter-spacing: 0.6px; margin-bottom: 2px;"
+            )
+            frame = QFrame()
+            frame.setObjectName("configSubSection")
+            frame.setStyleSheet(
+                "QFrame#configSubSection {"
+                "  background: rgba(255, 255, 255, 0.035);"
+                "  border: 1px solid #2d3555;"
+                "  border-radius: 8px;"
+                "}"
+            )
+            box = QVBoxLayout(frame)
+            box.setContentsMargins(14, 10, 14, 12)
+            box.setSpacing(8)
+            box.addWidget(titulo_lbl)
+            return frame, box
+
+        # — Layout e monitor —
+        sec_display, lay_display = _tela_subsection("Layout e monitor")
+        form_display = QFormLayout()
+        form_display.setSpacing(8)
+        form_display.setHorizontalSpacing(14)
+        form_display.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        form_display.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+
+        self.combo_screen_type = QComboBox()
+        self.combo_screen_type.setObjectName("comboScreenType")
+        self.combo_screen_type.addItem("Plenário padrão (clássico)", "plenario")
+        self.combo_screen_type.addItem("Layout lateral (foto + cronômetro)", "lateral")
+        current_type = self.session_config.get_secondary_screen_type()
+        idx = self.combo_screen_type.findData(current_type)
+        if idx >= 0:
+            self.combo_screen_type.setCurrentIndex(idx)
+        self.combo_screen_type.setMinimumHeight(38)
+        self.combo_screen_type.setStyleSheet(combo_style)
+        form_display.addRow("Layout:", self.combo_screen_type)
 
         self.combo_public_monitor = QComboBox()
         self.combo_public_monitor.setObjectName("comboPublicMonitor")
-        self.combo_public_monitor.setMinimumHeight(40)
-        self.combo_public_monitor.setStyleSheet(self.combo_screen_type.styleSheet())
+        self.combo_public_monitor.setMinimumHeight(38)
+        self.combo_public_monitor.setStyleSheet(combo_style)
         self._refresh_public_monitor_combo()
 
-        btn_refresh_monitors = QPushButton("🔄 Atualizar lista de monitores")
+        btn_refresh_monitors = QPushButton("Atualizar")
+        btn_refresh_monitors.setToolTip("Detectar monitores conectados")
+        btn_refresh_monitors.setFixedHeight(38)
+        btn_refresh_monitors.setMinimumWidth(108)
+        btn_refresh_monitors.setStyleSheet(btn_compact_style)
         btn_refresh_monitors.clicked.connect(self._refresh_public_monitor_combo)
+
         monitor_row = QHBoxLayout()
+        monitor_row.setSpacing(8)
         monitor_row.addWidget(self.combo_public_monitor, 1)
-        monitor_row.addWidget(btn_refresh_monitors)
-        tela_layout.addRow("Monitor do Público:", monitor_row)
+        monitor_row.addWidget(btn_refresh_monitors, 0)
+        form_display.addRow("Monitor:", monitor_row)
 
         monitor_hint = QLabel(
-            "Padrão: Monitor 2. Com 3+ monitores, escolha onde projetar a tela do plenário."
+            "Padrão: 2º monitor. Com vários displays, escolha onde abrir a tela do plenário."
         )
-        monitor_hint.setStyleSheet("color: rgba(200,200,255,0.6); font-size: 12px; font-style: italic;")
         monitor_hint.setWordWrap(True)
-        tela_layout.addRow("", monitor_hint)
+        monitor_hint.setStyleSheet("color: #7d8cad; font-size: 11px; margin-top: 2px;")
+        form_display.addRow("", monitor_hint)
 
-        # Imagem de fundo da tela secundária
-        bg_layout = QHBoxLayout()
+        lay_display.addLayout(form_display)
+        tela_main.addWidget(sec_display)
+
+        # — Comportamento —
+        sec_opts, lay_opts = _tela_subsection("Comportamento")
+        opts_layout = QVBoxLayout()
+        opts_layout.setSpacing(6)
+        opts_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.chk_show_year = QCheckBox("Exibir ano no cabeçalho da tela secundária")
+        self.chk_show_year.setChecked(self.session_config.get_secondary_show_year())
+        self.chk_show_year.setStyleSheet("color: #e8ecf5; font-size: 13px; padding: 2px 0;")
+        opts_layout.addWidget(self.chk_show_year)
+
+        self.chk_aparte_tolerance = QCheckBox("Tolerância de 1 minuto no aparte")
+        self.chk_aparte_tolerance.setChecked(self.session_config.get_aparte_tolerance_enabled())
+        self.chk_aparte_tolerance.setStyleSheet("color: #e8ecf5; font-size: 13px; padding: 2px 0;")
+        self.chk_aparte_tolerance.setToolTip(
+            "Marcado: o primeiro minuto de aparte não desconta o tempo do orador principal."
+        )
+        opts_layout.addWidget(self.chk_aparte_tolerance)
+
+        lay_opts.addLayout(opts_layout)
+        tela_main.addWidget(sec_opts)
+
+        # — Fundo personalizado —
+        sec_bg, lay_bg = _tela_subsection("Imagem de fundo")
         current_bg = self.session_config.get_secondary_background_path()
         self.bg_path_label = QLabel(current_bg or "Padrão do sistema")
-        btn_bg = QPushButton("🖼️ Escolher Fundo")
+        self.bg_path_label.setWordWrap(True)
+        self.bg_path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.bg_path_label.setStyleSheet(
+            "color: #c5cee0; font-size: 12px; padding: 8px 10px; "
+            "background: #12182a; border: 1px solid #2d3555; border-radius: 6px;"
+        )
+
+        btn_bg = QPushButton("Escolher imagem…")
         btn_bg.clicked.connect(self.escolher_fundo_secundario)
-        btn_bg_clear = QPushButton("↺ Usar Padrão")
+        btn_bg.setStyleSheet(btn_compact_style)
+        btn_bg_clear = QPushButton("Usar padrão")
+        btn_bg_clear.setStyleSheet(btn_compact_style)
         btn_bg_clear.clicked.connect(lambda: setattr(self, "new_secondary_bg_path", ""))
         btn_bg_clear.clicked.connect(lambda: self.bg_path_label.setText("Padrão do sistema"))
-        bg_layout.addWidget(self.bg_path_label)
-        bg_layout.addWidget(btn_bg)
-        bg_layout.addWidget(btn_bg_clear)
-        tela_layout.addRow("Fundo da Tela 2:", bg_layout)
-        
-        tela_note = QLabel("A seleção é salva automaticamente ao clicar em 'Salvar Configurações'.")
-        tela_note.setStyleSheet("color: rgba(200,200,255,0.6); font-size: 12px; font-style: italic;")
-        tela_layout.addRow(tela_note)
-        
-        tela_group.setLayout(tela_layout)
+
+        bg_btns = QHBoxLayout()
+        bg_btns.setSpacing(8)
+        bg_btns.addWidget(btn_bg, 1)
+        bg_btns.addWidget(btn_bg_clear, 1)
+
+        lay_bg.addWidget(self.bg_path_label)
+        lay_bg.addLayout(bg_btns)
+        tela_main.addWidget(sec_bg)
+
+        tela_note = QLabel(
+            "As alterações desta seção são aplicadas ao clicar em "
+            "<b>Salvar Configurações</b>."
+        )
+        tela_note.setWordWrap(True)
+        tela_note.setStyleSheet("color: #6d7d9c; font-size: 11px; padding: 4px 2px 0 2px;")
+        tela_main.addWidget(tela_note)
+
+        tela_group.setLayout(tela_main)
         layout.addWidget(tela_group)
         
         # --- SEÇÃO CONEXÕES ---
@@ -735,7 +843,7 @@ class VereadoresAdminDialog(QDialog):
         
         # Combo de Portas
         self.combo_ports = QComboBox()
-        self.combo_ports.setMinimumWidth(150)
+        self.combo_ports.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.refresh_ports() # Popular inicialmente
         arduino_controls.addWidget(self.combo_ports)
         
@@ -819,20 +927,22 @@ class VereadoresAdminDialog(QDialog):
         def create_color_row(label, color_key, default_color):
             row = QHBoxLayout()
             lbl = QLabel(label)
-            lbl.setMinimumWidth(150)
+            lbl.setMinimumWidth(120)
+            lbl.setMaximumWidth(160)
             
             # Preview da cor
             preview = QLabel()
-            preview.setFixedSize(100, 30)
+            preview.setFixedSize(72, 28)
             preview.setStyleSheet(f"background-color: {colors.get(color_key, default_color)}; border: 1px solid #555; border-radius: 4px;")
             
             # Input de texto (hexa)
             inp = QLineEdit(colors.get(color_key, default_color))
-            inp.setFixedWidth(100)
+            inp.setMinimumWidth(80)
+            inp.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             
             # Botão
             btn = QPushButton("🖌️")
-            btn.setFixedWidth(40)
+            btn.setFixedWidth(36)
             
             # Atualizar preview ao digitar
             inp.textChanged.connect(lambda t: preview.setStyleSheet(f"background-color: {t}; border: 1px solid #555; border-radius: 4px;"))
@@ -913,7 +1023,9 @@ class VereadoresAdminDialog(QDialog):
             QApplication.quit()
 
     def escolher_logo(self):
-        file, _ = QFileDialog.getOpenFileName(self, "Selecionar Logo", "", "Imagens (*.png *.jpg *.jpeg)")
+        file, _ = QFileDialog.getOpenFileName(
+            self, "Selecionar Logo", "", "Imagens (*.png *.jpg *.jpeg *.svg)"
+        )
         if file:
             self.new_logo_path = file
             self.logo_path_label.setText(os.path.basename(file))
@@ -1079,6 +1191,11 @@ class VereadoresAdminDialog(QDialog):
         monitor_idx = self.combo_public_monitor.currentData()
         if monitor_idx is not None:
             self.session_config.set_public_screen_index(int(monitor_idx))
+
+        if hasattr(self, 'chk_show_year'):
+            self.session_config.set_secondary_show_year(self.chk_show_year.isChecked())
+        if hasattr(self, 'chk_aparte_tolerance'):
+            self.session_config.set_aparte_tolerance_enabled(self.chk_aparte_tolerance.isChecked())
         
         if show_msg:
             QMessageBox.information(self, "Sucesso", "Configurações salvas com sucesso!")
@@ -1923,12 +2040,14 @@ class VereadoresAdminDialog(QDialog):
         banner_layout.setContentsMargins(30, 30, 30, 30)
         banner_layout.setSpacing(25)
         
-        # Logo Lado Esquerdo
+        from brand_assets import brand_pixmap, circular_pixmap, developer_pixmap
+
+        # Logo da marca (favicon.svg)
         logo_label = QLabel()
         logo_label.setStyleSheet("border: none; background: transparent;")
-        logo_pix = QPixmap(self.session_config.get_bundle_path("fotos/logo.png"))
+        logo_pix = brand_pixmap(self.session_config, 100, 100)
         if not logo_pix.isNull():
-            logo_label.setPixmap(logo_pix.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+            logo_label.setPixmap(logo_pix)
         else:
             logo_label.setText("🏛️")
             logo_label.setStyleSheet("font-size: 50px; background-color: #0984e3; color: white; border-radius: 15px; padding: 10px;")
@@ -2009,19 +2128,9 @@ class VereadoresAdminDialog(QDialog):
         dev_photo_label = QLabel()
         dev_photo_label.setFixedSize(80, 80)
         dev_photo_label.setStyleSheet("border: none; background: transparent;")
-        carlos_pix = QPixmap(self.session_config.get_bundle_path("fotos/carlos.jpeg"))
-        if not carlos_pix.isNull():
-            size = 80
-            circular_pix = QPixmap(size, size)
-            circular_pix.fill(Qt.GlobalColor.transparent)
-            painter = QPainter(circular_pix)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            path = QPainterPath()
-            path.addEllipse(0, 0, size, size)
-            painter.setClipPath(path)
-            painter.drawPixmap(0, 0, carlos_pix.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-            painter.end()
-            dev_photo_label.setPixmap(circular_pix)
+        dev_raw = developer_pixmap(self.session_config)
+        if not dev_raw.isNull():
+            dev_photo_label.setPixmap(circular_pixmap(dev_raw, 80))
         else:
             dev_photo_label.setText("👤")
             dev_photo_label.setStyleSheet("font-size: 40px; background-color: #1a1a2e; border-radius: 40px; color: white;")

@@ -36,7 +36,9 @@ class TestAparteTolerance(unittest.TestCase):
         self.assertEqual(self.tolerancia, 60)
 
     def test_encerrar_aparte_usa_tolerancia(self):
+        self.assertIn("get_aparte_tolerance_enabled()", self.main_source)
         self.assertIn("tempo_descontado = max(0, tempo_gasto - APARTE_TOLERANCE_SECONDS)", self.main_source)
+        self.assertIn("tempo_descontado = tempo_gasto", self.main_source)
         self.assertIn("self.remaining_seconds = self.saved_main_seconds - tempo_descontado", self.main_source)
 
     def test_dentro_da_tolerancia_nao_desconta(self):

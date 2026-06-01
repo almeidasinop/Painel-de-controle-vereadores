@@ -51,8 +51,11 @@ logs/
 config.local.py
 *.local.*
 
-# Fotos dos vereadores (opcional - remova se quiser versionar)
-fotos/
+# Fotos dos vereadores (cadastros locais); manter marca e ícones no repositório
+fotos/*
+!fotos/favicon.svg
+!fotos/77593994.png
+!fotos/icon.ico
 
 # Backup
 *.bak
